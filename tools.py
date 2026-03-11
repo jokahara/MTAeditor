@@ -1,12 +1,10 @@
 from rdkit import Chem
-from ase import Atoms
 import numpy as np
 
 from filter import ClusterFilter
 
 def load_cluster_filter(file_in, mol_file='parameters.txt') -> ClusterFilter:
     cf = ClusterFilter(file_in, mol_file=mol_file)
-    
     return cf
 
 def generate_mol(cluster_filter: ClusterFilter, ct: str) -> Chem.Mol:

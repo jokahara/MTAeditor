@@ -5,16 +5,15 @@ import sys
 import os
 import copy
 
-from PySide6.QtWidgets import QMenu, QApplication, QStatusBar, QMessageBox, QFileDialog, QSplitter, QGroupBox, QGridLayout
-from PySide6.QtCore import QSettings
 from PySide6 import QtCore, QtGui, QtWidgets
-from PySide6.QtCore import QUrl, Qt, QEvent, QObject
-from PySide6.QtGui import QDesktopServices, QIcon, QAction, QKeySequence, QKeyEvent
+from PySide6.QtWidgets import QMenu, QApplication, QStatusBar, QMessageBox, QFileDialog, QSplitter, QGroupBox, QGridLayout
+from PySide6.QtCore import QSettings, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon, QAction, QKeySequence
 
 # Import model
-from .molEditWidget import MolEditWidget
-from .mol3d_widget import Mol3DWindow
-from .dataWidget import DataWidget
+from molEditWidget import MolEditWidget
+from mol3d_widget import Mol3DWindow
+from dataWidget import DataWidget
 
 from rdkit import Chem
 import qdarktheme
@@ -52,7 +51,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fragments = [MolEditWidget(), MolEditWidget(), MolEditWidget()]
         self.n_frags = 0 # Number of currently visible fragments
         self.dataBox = DataWidget(self)
-        
+
         self.chemEntityActionGroup = QtGui.QActionGroup(self, exclusive=True)
         #self.mol3d = Mol3D(self)
         self._fileName = None
@@ -316,28 +315,6 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.toolMenu.addAction(self.removeAction)
         self.toolMenu.addAction(self.clearCanvasAction)
 
-        """# Atomtype menu
-        for action in self.atomActions:
-            self.atomtypeMenu.addAction(action)
-        self.specialatommenu = self.atomtypeMenu.addMenu("All Atoms")
-        for atomnumber in self.ptable.ptable.keys():
-            atomname = self.ptable.ptable[atomnumber]["Symbol"]
-            self.specialatommenu.addAction(self.ptable.atomActions[atomname])
-
-        # Bondtype Menu
-        self.bondtypeMenu.addAction(self.singleBondAction)
-        self.bondtypeMenu.addAction(self.doubleBondAction)
-        self.bondtypeMenu.addAction(self.tripleBondAction)
-        self.bondtypeMenu.addSeparator()
-        # Bondtype Special types
-        self.specialbondMenu = self.bondtypeMenu.addMenu("Special Bonds")
-        for key in self.bondActions.keys():
-            self.specialbondMenu.addAction(self.bondActions[key])
-
-        # Templates menu
-        for key in self.templateActions.keys():
-            self.templateMenu.addAction(self.templateActions[key])
-        """
         # Settings menu
         self.themeMenu = self.settingsMenu.addMenu("Theme")
         self.populateThemeActions(self.themeMenu)
@@ -412,26 +389,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mainToolBar.addAction(self.showHsAction)
         self.mainToolBar.addAction(self.cleanCoordinatesAction)
         self.mainToolBar.addAction(self.open3DmolAction)
-
-        #self.mainToolBar.addAction(self.removeAction)
         self.mainToolBar.addAction(self.clearCanvasAction)
-        
-        # Side Toolbar
-        """self.sideToolBar = QtWidgets.QToolBar(self)
-        self.addToolBar(QtCore.Qt.LeftToolBarArea, self.sideToolBar)
-        
-        self.sideToolBar.addAction(self.singleBondAction)
-        self.sideToolBar.addAction(self.doubleBondAction)
-        self.sideToolBar.addAction(self.tripleBondAction)
-        self.sideToolBar.addSeparator()
-        self.sideToolBar.addAction(self.templateActions["benzene"])
-        self.sideToolBar.addAction(self.templateActions["cyclohexane"])
-        self.sideToolBar.addSeparator()
-        self.sideToolBar.addAction(self.ptable.atomActions["R"])
-        self.sideToolBar.addSeparator()
-        for action in self.atomActions:
-            self.sideToolBar.addAction(action)
-        """
 
     def loadSmilesFile(self, filename):
         self.fileName = filename
@@ -786,9 +744,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.actionActionGroup.addAction(self.cutAction2)
 
         self.applyAction = QAction(
-            "Apply Cuts",
+            QIcon.fromTheme("icons8-Replace Atom"),
+            "Apply",
             self,
-            shortcut="Ctrl+A",
+            shortcut="Ctrl+Shift+A",
             statusTip="Apply cuts to create fragments",
             triggered=self.applyCuts,
             objectName="Apply",
@@ -986,4 +945,4 @@ def launch(loglevel="WARNING"):
 
 
 if __name__ == "__main__":
-    launch(loglevel="DEBUG")
+    launch()

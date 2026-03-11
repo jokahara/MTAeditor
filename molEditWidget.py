@@ -1,31 +1,21 @@
 #!/usr/bin/python
 # Import required modules
-from PySide6 import QtCore, QtGui, QtSvg, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
-from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtCore import Qt, QPointF
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QMouseEvent, QPainter, QPen
-import math
-
 
 import sys
 import logging
 from warnings import warn
 import copy
 
-
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem
-from rdkit.Chem import Draw
 from rdkit.Chem import rdDepictor
-from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Geometry.rdGeometry import Point2D, Point3D
 
-# from rdkit.Chem.AllChem import GenerateDepictionMatching3DStructure
-
-from .molViewWidget import MolWidget
+from molViewWidget import MolWidget
 
 # The Molblock editor class
 class MolEditWidget(MolWidget):

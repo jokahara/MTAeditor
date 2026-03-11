@@ -52,12 +52,5 @@
  TolKFK  0    data/MONOMERS/TolKFK.xyz
  TolRQG  0    data/MONOMERS/TolRQG.xyz
  TolZKE  0    data/MONOMERS/TolZKE.xyz
- diG     0    data/PEGs/DEG.xyz
- eG      0    data/PEGs/EG.xyz
- HepG    0    data/PEGs/HeptaG.xyz
- HexG    0    data/PEGs/HexaG.xyz
- OctG    0    data/PEGs/OctaG.xyz
- PenG    0    data/PEGs/PentaG.xyz
- TriG    0    data/PEGs/TEG.xyz
- TetG    0    data/PEGs/TetraG.xyz
-0_0_2_0_0_0
+
+

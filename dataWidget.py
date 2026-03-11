@@ -20,9 +20,9 @@ from PySide6.QtWidgets import (QLayout, QApplication, QCheckBox, QComboBox,
                                QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, 
                                QWidget, QFormLayout, QAbstractItemView)
 
-from .molEditWidget import MolEditWidget
-from .tools import *
-from .orb_calculator import E, get_calculator, get_single_point_energies
+from molEditWidget import MolEditWidget
+from tools import *
+from orb_calculator import E, get_calculator, get_single_point_energies
 
 
 class WorkerSignals(QObject):
@@ -166,9 +166,9 @@ class DataWidget(QGroupBox):
         self.conf_table = QTableWidget(self.tabs, columnCount=4)
         self.conf_table.setHorizontalHeaderLabels(['basename', 'H-bonds', 'Elec. energy', 'Gibbs energy'])
         self.conf_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.conf_table.setColumnWidth(1, 60)
-        self.tabs.addTab(self.conf_table, 'Conformers')
+        self.conf_table.setColumnWidth(1, 60)       
 
+        self.tabs.addTab(self.conf_table, 'Conformers')
 
         self.Hbond_table = QTableWidget(self.tabs, columnCount=4)
         self.Hbond_table.setHorizontalHeaderLabels(['D', 'A', 'length (Å)', 'angle (deg)'])
@@ -191,7 +191,7 @@ class DataWidget(QGroupBox):
         self.tabs.addTab(self.limit_table, 'Limits')
 
         self.setWindowTitle("Data")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(440)
 
     def set_calculator(self, calc):
         self.calculator = calc
@@ -364,6 +364,7 @@ class DataWidget(QGroupBox):
                     self.conf_table.setItem(row, i, QTableWidgetItem(str(df.loc[idx, col])))
                 else:
                     self.conf_table.setItem(row, i, QTableWidgetItem('NaN'))
+                self.conf_table.itemAt(row, i).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         return
 
     def update_limits(self, row, col):
@@ -445,7 +446,6 @@ class DataWidget(QGroupBox):
         def delete_row():
             child.parent().removeChild(child)
             self.results = self.results.drop(index=idx)
-            print(self.results)
 
         delete_button.clicked.connect(delete_row)
         delete_button.setIcon(QIcon.fromTheme("icons8-Cancel"))
