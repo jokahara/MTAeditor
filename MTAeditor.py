@@ -12,27 +12,12 @@ from PySide6.QtCore import QUrl, Qt, QEvent, QObject
 from PySide6.QtGui import QDesktopServices, QIcon, QAction, QKeySequence, QKeyEvent
 
 # Import model
-from . import __version__
 from .molEditWidget import MolEditWidget
 from .mol3d_widget import Mol3DWindow
 from .dataWidget import DataWidget
 
 from rdkit import Chem
 import qdarktheme
-
-class KeyPressFilter(QObject):
-
-    def eventFilter(self, watched, event):
-        print(event)
-        if event.type() == QEvent.KeyPress:
-            print(event.key())
-            return True
-            #text = event.text()
-            #if event.modifiers():
-            #    text = event.keyCombination().key().name.decode(encoding="utf-8")
-            #widget.label1.setText(text)        
-
-        return super().eventFilter(watched, event)
 
 
 # The main window class
@@ -67,8 +52,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fragments = [MolEditWidget(), MolEditWidget(), MolEditWidget()]
         self.n_frags = 0 # Number of currently visible fragments
         self.dataBox = DataWidget(self)
-        self.installEventFilter(KeyPressFilter())
-
+        
         self.chemEntityActionGroup = QtGui.QActionGroup(self, exclusive=True)
         #self.mol3d = Mol3D(self)
         self._fileName = None
@@ -368,7 +352,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.drawOptionsMenu.addAction(self.drawOptionsActions[key])
 
         # Help menu
-        self.helpMenu.addAction(self.aboutAction)
+        #self.helpMenu.addAction(self.aboutAction)
         self.helpMenu.addSeparator()
         #self.helpMenu.addAction(self.openChemRxiv)
         self.helpMenu.addAction(self.openRepository)
@@ -570,18 +554,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return "N"
         self.close()
 
-    def aboutHelp(self):
-        QMessageBox.about(
-            self,
-            "About Simple Molecule Editor",
-            f"""A Simple Molecule Editor where you can edit molecules\n
-Based on RDKit! http://www.rdkit.org/\n
-Some icons from http://icons8.com\n
-Source code: https://github.com/EBjerrum/rdeditor\n
-Version: {__version__}
-            """,
-        )
-
     def setAction(self):
         sender = self.sender()
         self.editor.setAction(sender.objectName())
@@ -732,13 +704,13 @@ Version: {__version__}
             triggered=self.exitFile,
         )
 
-        self.aboutAction = QAction(
+        """self.aboutAction = QAction(
             QIcon.fromTheme("about"),
             "A&bout",
             self,
             statusTip="Displays info about text editor",
             triggered=self.aboutHelp,
-        )
+        )"""
 
         self.aboutQtAction = QAction(
             "About &Qt",

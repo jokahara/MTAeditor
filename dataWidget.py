@@ -199,7 +199,7 @@ class DataWidget(QGroupBox):
         self.parent().parent().calcAction.setText("Calculate")
 
     def calculate_frag_energies(self):
-        if self.calculator == None:
+        if self.calculator == None or self.bond_name == '':
             return
         
         self.parent().parent().calcAction.setEnabled(False)
@@ -470,11 +470,32 @@ class DataWidget(QGroupBox):
         df.index = range(len(df))
         if file.endswith('.pkl'):
             df.to_pickle(file)
-        if file.endswith('.csv'):
+        elif file.endswith('.csv'):
             df['fragments'] = [{k: v[0] for k, v in d.items()} for d in df['fragments'].values]
             df.to_csv(file)
-        if file.endswith('.json'):
-            pd.DataFrame().to_json()
+        elif file.endswith('.json'):
+            import json
+            molecules = np.unique(df['molecule'])
+            df['fragments'] = [{k: v[0] for k, v in d.items()} for d in df['fragments'].values]
+            data = {}
+            for m in molecules:
+                subset = df[df['molecule']==m]
+                data[m] = {conf: {} for conf in subset['conformer']}
+                for conf in subset['conformer']:
+                    bonds = subset[subset['conformer']==conf]
+                    for bond in np.unique(bonds['H-bond']):
+                        b = bonds[bonds['H-bond']==bond]
+                        data[m][conf][bond]= {
+                            'energy': list(b['energy'].values), 'Hbond_pairs': b['Hbond_pairs'].values[0], 
+                            'length': list(b['length'].values), 'angle': list(b['angle'].values), 
+                            'fragments': list(b['fragments'].values)
+                        }
+
+            #self.results = pd.DataFrame(columns=['molecule', 'conformer', 'H-bond', 'energy', 'Hbond_pairs', 'length', 'angle', 'fragments'])
+            print(data)
+            with open('data.json', 'w') as f:
+                json.dump(data, f)
+
 
         return
 
