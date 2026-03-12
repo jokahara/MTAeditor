@@ -49,5 +49,6 @@ def get_single_point_energies(mols, calculator, conf=0, charge=0, spin=1):
 
         el = atoms.get_potential_energy() / units.Ha
         results.append((el, atoms))
+        atoms.calc = None
 
     return results

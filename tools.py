@@ -85,3 +85,37 @@ tforms = {0: rot_ar_x, 1: rot_ar_y, 2: rot_ar_z}
 def rotate_mol(mol, radii, axis):
     radii = np.pi*radii/180
     Chem.rdMolTransforms.TransformConformer(mol.GetConformer(0), tforms[axis](radii))
+
+def write_json(file, df):
+    from ase import Atoms
+    import json
+
+    class Encoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.bool_):
+                return bool(obj)
+            if isinstance(obj, np.int64):
+                return int(obj)
+            if isinstance(obj, np.ndarray):
+                return list(obj)
+            if isinstance(obj, Atoms):
+                return obj.todict()
+            return super().default(obj)
+    
+    molecules = np.unique(df['molecule'])
+    data = {}
+    for m in molecules:
+        subset = df[df['molecule']==m]
+        data[m] = {conf: {} for conf in subset['conformer']}
+        for conf in subset['conformer']:
+            bonds = subset[subset['conformer']==conf]
+            for bond in np.unique(bonds['H-bond']):
+                b = bonds[bonds['H-bond']==bond]
+                data[m][conf][bond]= {
+                    'energy': list(b['energy'].values), 'Hbond_pairs': b['Hbond_pairs'].values[0], 
+                    'length': list(b['length'].values), 'angle': list(b['angle'].values), 
+                    'fragments': list(b['fragments'].values)
+                }
+                
+    with open(file, "w") as f:
+        json.dump(data, f, cls=Encoder)

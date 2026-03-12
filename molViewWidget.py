@@ -259,11 +259,14 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
             selected += s
         for s in self._selectedAtoms[2]: 
             selected += s
-        return self.getIdx(self._drawmol, selected)
+        return selected
 
 
     @property
     def colors(self):
+        if len(self.selectedAtoms) == 0:
+            return {}, {}
+        
         atom_cols = defaultdict(list)
         bond_cols = defaultdict(list)
         atom_cols.update({self.getIdx(self._drawmol, a): [self.color_list[0]] for a in self._selectedAtoms[0]})
@@ -271,16 +274,22 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
             for pair in self._selectedAtoms[i]: 
                 for a in pair: 
                     atom_cols[self.getIdx(self._drawmol, a)].append(self.color_list[i])
-        
+                    
         for bond in self._drawmol.GetBonds():
-            a, b = bond.GetBeginAtomIdx(),  bond.GetEndAtomIdx()
+            a,b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            a, b = self.getProp(self._drawmol, a), self.getProp(self._drawmol, b)
+            
             if (a in self._selectedAtoms[0]) and (b in self._selectedAtoms[0]):
                 bond_cols[bond.GetIdx()].append(self.color_list[0])
             for i in [1,2]:
                 for pair in self._selectedAtoms[i]: 
+                    if len(pair) < 2:
+                        continue
+                    pair[0] = self.getProp(self._drawmol, pair[0])
+                    pair[1] = self.getProp(self._drawmol, pair[1])
                     if (a in pair) and (b in pair):
                         bond_cols[bond.GetIdx()].append(self.color_list[i])
-
+                        
         return dict(atom_cols), dict(bond_cols)
 
     @property

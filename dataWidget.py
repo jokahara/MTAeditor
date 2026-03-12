@@ -214,7 +214,8 @@ class DataWidget(QGroupBox):
         conf_name = self.clusters_df[('info', 'file_basename')].values[self.conf_id]
         e0 = self.clusters_df[('log', 'electronic_energy')].values[self.conf_id]
         bondE = e0 - results[0][0] - results[1][0] + results[2][0]
-        fragments = {'F1': results[0], 'F2': results[1], 'F12': results[2]}
+        cuts = (self.cuts[0].copy(), self.cuts[1].copy())
+        fragments = {'E0': e0, 'cuts': cuts, 'F1': results[0], 'F2': results[1], 'F12': results[2]}
 
         pairs = []; lengths = []; angles = []
         for b in self.bond_name.split(' + '):
@@ -290,6 +291,7 @@ class DataWidget(QGroupBox):
         self.Hbond_table.setVerticalHeaderLabels(['HB'+str(i+1) for i in range(n)])
         
         self.Hbond_df = pd.DataFrame(columns=['D', 'A', 'length', 'angle'])
+        
         for i in range(n):
             self.Hbond_table.setItem(i, 0, QTableWidgetItem(str(don[i])))
             self.Hbond_table.setItem(i, 1, QTableWidgetItem(str(acc[i])))
@@ -298,7 +300,7 @@ class DataWidget(QGroupBox):
             angle = np.round(angles[i], 2)
             angle = angle[0] if len(angle) == 1 else angle
             self.Hbond_table.setItem(i, 3, QTableWidgetItem(str(angle)))
-            self.Hbond_df.loc['HB'+str(i+1)] = [don[i], acc[i], length, angle]
+            self.Hbond_df.loc['HB'+str(i+1)] = np.array([don[i], acc[i], length, angle], dtype=object)
 
             for j in range(4):
                 self.Hbond_table.item(i,j).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -351,6 +353,7 @@ class DataWidget(QGroupBox):
         self.editor.logger.info(f"The following bonds were left over from fragments: {bond_names}")
         self.bond_name = ' + '.join(sorted(bond_names))
 
+        self.cuts = (cut1, cut2)
         self.frags = (frag1, frag2, frag12)
         return self.frags
     
@@ -470,33 +473,18 @@ class DataWidget(QGroupBox):
         df.index = range(len(df))
         if file.endswith('.pkl'):
             df.to_pickle(file)
-        elif file.endswith('.csv'):
-            df['fragments'] = [{k: v[0] for k, v in d.items()} for d in df['fragments'].values]
+            return
+        
+        if file.endswith('.csv'):
             df.to_csv(file)
         elif file.endswith('.json'):
-            import json
-            molecules = np.unique(df['molecule'])
-            df['fragments'] = [{k: v[0] for k, v in d.items()} for d in df['fragments'].values]
-            data = {}
-            for m in molecules:
-                subset = df[df['molecule']==m]
-                data[m] = {conf: {} for conf in subset['conformer']}
-                for conf in subset['conformer']:
-                    bonds = subset[subset['conformer']==conf]
-                    for bond in np.unique(bonds['H-bond']):
-                        b = bonds[bonds['H-bond']==bond]
-                        data[m][conf][bond]= {
-                            'energy': list(b['energy'].values), 'Hbond_pairs': b['Hbond_pairs'].values[0], 
-                            'length': list(b['length'].values), 'angle': list(b['angle'].values), 
-                            'fragments': list(b['fragments'].values)
-                        }
-
-            #self.results = pd.DataFrame(columns=['molecule', 'conformer', 'H-bond', 'energy', 'Hbond_pairs', 'length', 'angle', 'fragments'])
-            print(data)
-            with open('data.json', 'w') as f:
-                json.dump(data, f)
-
-
+            try:
+                write_json(file, df)
+            except:
+                self.editor.logger.error('Failed to write JSON file.')
+                return
+            
+        self.editor.logger.info('Results saved to '+file)
         return
 
 

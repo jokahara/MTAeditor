@@ -1,3 +1,9 @@
+
+output
+results*
+test*
+*json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -24,7 +30,6 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-output
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
