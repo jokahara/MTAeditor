@@ -160,6 +160,7 @@ class MolEditWidget(MolWidget):
         #if min([atom_dist, bond_dist]) < 20.0:
         if atom_dist < 20.0:
             atom_idx = self.getProp(self._drawmol, int(atom_idx))
+            atom_idx = self.getIdx(self.mol, atom_idx)
             return self.mol.GetAtomWithIdx(atom_idx)
         else:
             # Translate SVG to Coords

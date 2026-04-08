@@ -26,7 +26,8 @@ class Mol3DWindow(QMainWindow):
         )
         for atom in mol.GetAtoms():
             idx = atom.GetIdx()
-            view.addLabel(idx,
+            label = atom.GetIntProp('atomNote') if atom.HasProp('atomNote') else ''
+            view.addLabel(label,
                 {'position': {'x': mol.GetConformer(0).GetAtomPosition(idx).x,
                             'y': mol.GetConformer(0).GetAtomPosition(idx).y,
                             'z': mol.GetConformer(0).GetAtomPosition(idx).z},

@@ -172,7 +172,9 @@ class ClusterFilter(ClusterData):
         return self._components
 
     def cluster_info(self, cluster_type: str) -> ClusterInfo:
-
+        if cluster_type not in self.components.keys():
+            return None
+        
         if cluster_type not in self._cluster_info.keys():
             from cluster_analysis import construct_cluster
             components = self.components[cluster_type]
@@ -247,7 +249,18 @@ class ClusterFilter(ClusterData):
             cluster_types = [cluster_types]
 
         func = lambda df, ct: [df[('info', 'cluster_type')].values[0] not in ct]*len(df)
-        self._filter(func, self.cluster_types, ct=cluster_types)
+        self._filter(func, ct=cluster_types)
+        return
+
+    def monomers(self, extract=True):
+        m = [k for k,v in self.components.items() if len(v)==1]
+        if len(m) == 0:
+            return
+        
+        if extract:
+            self.extract_clusters(m)
+        else:
+            self.except_clusters(m)
         return
 
     @property

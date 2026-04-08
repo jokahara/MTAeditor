@@ -1,9 +1,9 @@
-
-import sys
+import os, sys
 import traceback
-from collections import defaultdict
+
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, QRunnable, QThreadPool, QTimer, Slot, Signal, QObject
@@ -21,9 +21,11 @@ from PySide6.QtWidgets import (QLayout, QApplication, QCheckBox, QComboBox,
                                QWidget, QFormLayout, QAbstractItemView)
 
 from molEditWidget import MolEditWidget
+#from patternsWidget import PatternsWidget
 from tools import *
-from orb_calculator import E, get_calculator, get_single_point_energies
+from orb_calculator import *
 
+LOADING_ENABLED = True
 
 class WorkerSignals(QObject):
     """Signals from a running worker thread.
@@ -122,14 +124,16 @@ class DataWidget(QGroupBox):
         self.i =  0
         self.results = pd.DataFrame(columns=['molecule', 'conformer', 'H-bond', 'energy', 'Hbond_pairs', 'length', 'angle', 'fragments'])
         self.frags = (None, None, None)
+        self.mode = ''
         
         self.calculator = None
-        self.threadpool = QThreadPool.globalInstance()
-        thread_count = self.threadpool.maxThreadCount()
-        print(f"Multithreading with maximum {thread_count} threads")
-        loader = Worker(get_calculator)
-        loader.signals.result.connect(self.set_calculator)
-        self.threadpool.start(loader)
+        if LOADING_ENABLED:
+            self.threadpool = QThreadPool.globalInstance()
+            thread_count = self.threadpool.maxThreadCount()
+            print(f"Multithreading with maximum {thread_count} threads")
+            loader = Worker(get_calculator)
+            loader.signals.result.connect(self.set_calculator)
+            self.threadpool.start(loader)
         
         self.pickle_file = DropLineEdit(placeholderText='file missing')
         self.fileDropped = self.pickle_file.fileDropped
@@ -190,6 +194,11 @@ class DataWidget(QGroupBox):
         self.limit_table.cellChanged.connect(self.update_limits)
         self.tabs.addTab(self.limit_table, 'Limits')
 
+        self.patterns_table = PatternsWidget(self.tabs)
+        self.patterns_table.setWindowTitle('Patterns')
+        self.load_patterns()
+        self.tabs.addTab(self.limit_table, 'Patterns')
+
         self.setWindowTitle("Data")
         self.setMinimumWidth(440)
 
@@ -199,27 +208,45 @@ class DataWidget(QGroupBox):
         self.parent().parent().calcAction.setText("Calculate")
 
     def calculate_frag_energies(self):
-        if self.calculator == None or self.bond_name == '':
+        if self.calculator == None or self.mode == '':
             return
         
         self.parent().parent().calcAction.setEnabled(False)
-        worker = Worker(get_single_point_energies, self.frags, self.calculator)
+        self.editor.logger.info(f'Calculating in {self.mode.replace('*', 'Reduced ')} mode')
+            
+        mol = self._rdmol_simple if '*' in self.mode else self._rdmol
+        if 'MTA' in self.mode:
+            frags = [mol]+list(self.frags)
+            worker = Worker(get_single_point_energies, frags, self.calculator)
+        elif 'ROT' in self.mode:
+            worker = Worker(get_rotational_energies, mol, self.rotation, self.calculator)
         worker.signals.result.connect(self.add_results)
         self.threadpool.start(worker)
 
     
     def add_results(self, results):        
         self.parent().parent().calcAction.setEnabled(True)
-
         conf_name = self.clusters_df[('info', 'file_basename')].values[self.conf_id]
-        e0 = self.clusters_df[('log', 'electronic_energy')].values[self.conf_id]
-        bondE = e0 - results[0][0] - results[1][0] + results[2][0]
-        cuts = (self.cuts[0].copy(), self.cuts[1].copy())
-        fragments = {'E0': e0, 'cuts': cuts, 'F1': results[0], 'F2': results[1], 'F12': results[2]}
+        e0 = results[0][0]
+        if 'MTA' in self.mode:
+            bondE = results[0][0] - results[1][0] - results[2][0] + results[3][0]
+            cuts = (self.cuts[0].copy(), self.cuts[1].copy())
+            fragments = {'E0': e0, 'cuts': cuts, 'F1': results[1], 'F2': results[2], 'F12': results[3]}
+        elif 'ROT' in self.mode:
+            el, angle, peak_idx = results
+
+            # Draw results into a plot
+            from MTAeditor.pyplot_figures import plot_rotation
+            plot_rotation(el, angle, self.bond_name, conf_name, peak_idx)
+            
+            closest = np.argmin(np.abs(angle[peak_idx]-180))
+            #print(np.array([el, angle]).T)
+            bondE = el[0] - el[peak_idx[closest]]
+            fragments = {'E0': el[0], 'bond': self.rotation, 'scan': results}
 
         pairs = []; lengths = []; angles = []
         for b in self.bond_name.split(' + '):
-            don, acc, length, angle = self.Hbond_df.loc[b]
+            don, acc, length, angle = self.Hbond_df.loc[b.removeprefix('r').removesuffix('*')]
             pairs.append((int(don), int(acc)))
             lengths.append(length)
             angles.append(angle)
@@ -233,20 +260,21 @@ class DataWidget(QGroupBox):
         self.tabs.setCurrentIndex(2)
 
     def load_pickled_data(self, pickle_file, mol_file=None):
-        try: 
-            self.pickle_file.setText(pickle_file)
-            if self.cluster_filter == None:
-                self.cluster_filter = load_cluster_filter(pickle_file, mol_file)
-            else:
-                self.cluster_filter.read_cluster_data(pickle_file)
+        if not os.path.isfile(pickle_file):
+            return
+        if self.pickle_file.text() == pickle_file:
+            return
 
-            self.cluster_types = self.cluster_filter.cluster_types
-            self.mol_select.addItems(self.cluster_types)
-            self.select_cluster_type(self.cluster_types[0])
-            self.cluster_filter._Hbond_counts
-            self.set_limits_table(self.cluster_filter.Hbond_limits)
-        except:
-            self.pickle_file.clear()
+        self.pickle_file.setText(pickle_file)
+        if self.cluster_filter == None:
+            self.cluster_filter = load_cluster_filter(pickle_file, mol_file)
+        else:
+            self.cluster_filter.read_cluster_data(pickle_file)
+
+        self.cluster_types = self.cluster_filter.cluster_types
+        self.mol_select.clear()
+        self.mol_select.addItems(self.cluster_types)
+        self.select_cluster_type(self.cluster_types[0])        
 
         return
 
@@ -254,10 +282,11 @@ class DataWidget(QGroupBox):
         self.parent().parent().clearFragments()
         self.cluster_type = ct
         cf = self.cluster_filter
-        if cf == None:
+        if cf == None or ct == '':
             return
         
-        cf.reset()
+        cf.reset()            
+        self.set_limits_table(self.cluster_filter.Hbond_limits)
         cf.extract_clusters(ct)
         cf.Hbonded(100, 'X')
         self.clusters_df = cf.get_filtered_data(True)
@@ -277,6 +306,8 @@ class DataWidget(QGroupBox):
         self.select_conformer(conf)
 
     def select_conformer(self, conf_id=0):
+        self.mode = ''
+        self._rdmol_simple = None
         self.conf_id = conf_id
         don, acc = self.clusters_df[('temp', 'Hbond_pairs')].values[conf_id]
         atoms = self.clusters_df[('xyz', 'structure')].values[conf_id]
@@ -311,10 +342,11 @@ class DataWidget(QGroupBox):
         frag1 = frag2 = frag12 = None
         proceed = True
         
+        mol = self._rdmol_simple if '*' in self.mode else self._rdmol
         if len(cut1) > 0:
-            frag1 = cut_molecule(self._rdmol, cut1)
+            frag1 = cut_molecule(mol, cut1)
         if len(cut2) > 0:
-            frag2 = cut_molecule(self._rdmol, cut2)
+            frag2 = cut_molecule(mol, cut2)
         if (len(cut1) > 0) and (len(cut2) > 0):
             try:
                 frag12 = cut_molecule(frag1, cut2)
@@ -326,17 +358,13 @@ class DataWidget(QGroupBox):
         
         # check that only H-bonds are calculated:
         bonds0 = get_bonds(self.editor.mol)
-        bonds1 = get_bonds(frag1)
-        bonds2 = get_bonds(frag2)
-        bonds12 = get_bonds(frag12)
+        bonds1 = get_bonds(frag1); bonds2 = get_bonds(frag2); bonds12 = get_bonds(frag12)
         remainder = bonds0 - bonds1 - (bonds2 - bonds12)
-        idx1 = get_props(frag1)
-        idx2 = get_props(frag2)
-        idx12 = get_props(frag12)
-
+        props = get_props(self.editor.mol)
+        idx1 = get_props(frag1); idx2 = get_props(frag2); idx12 = get_props(frag12)
         bond_names = []
         for a,b in list(remainder):
-            bond = self.editor.mol.GetBondBetweenAtoms(int(a), int(b))
+            bond = self.editor.mol.GetBondBetweenAtoms(*get_idx(props, (a,b)))
             if bond.GetBondType() == Chem.BondType.HYDROGEN:
                 remains = int(a in idx1 and b in idx1) \
                             + int(a in idx2 and b in idx2) \
@@ -356,6 +384,45 @@ class DataWidget(QGroupBox):
         self.cuts = (cut1, cut2)
         self.frags = (frag1, frag2, frag12)
         return self.frags
+    
+    def internal_rotation(self, rot=[]):
+        try:
+            assert len(rot) == 2
+            self.rotation = rot
+            if '*' in self.mode:
+                new_mol = rotate_bond(self._rdmol_simple, rot[0], rot[1])
+            else:
+                new_mol = rotate_bond(self._rdmol, rot[0], rot[1])
+
+            names = []
+            d1 = Chem.Get3DDistanceMatrix(self.editor.mol)
+            d2 = Chem.Get3DDistanceMatrix(new_mol)
+            for bond in self.editor.mol.GetBonds():
+                if bond.GetBondType() == Chem.BondType.HYDROGEN:
+                    a = bond.GetBeginAtomIdx()
+                    b = bond.GetEndAtomIdx()
+                    if np.abs(d1[a,b] - d2[a,b]) > 0.01: 
+                        names.append('r'+bond.GetProp('bondNote'))
+                    
+            self.bond_name = ' + '.join(names)
+            self.frags = (new_mol, )
+            return new_mol
+        except: 
+            self.editor.logger.error(f"Rotation {rot} failed")
+
+        return
+    
+    def simplify(self, cuts):
+        if len(cuts) == 0:
+            return None
+        
+        self._rdmol_simple = None
+        #try:
+        self._rdmol_simple = cut_molecule(self._rdmol, cuts)
+        don, acc = self.clusters_df[('temp', 'Hbond_pairs')].values[self.conf_id]
+        #atoms = self.clusters_df[('xyz', 'structure')].values[self.conf_id]
+        new_mol = add_hydrogen_bonds(self._rdmol_simple, don, acc, self.editor.mol)
+        return new_mol
     
     def update_conf_table(self, df):
         self.conf_table.setRowCount(len(df))
@@ -391,7 +458,7 @@ class DataWidget(QGroupBox):
                 if lengths == (a,b):
                     return
                 assert a > 1.0
-                assert b < 3.5
+                assert b < 5
                 self.cluster_filter.set_Hbond(donor, acceptor, length=(a, b))
             elif col == 1:
                 if angles == (a,b):
@@ -442,7 +509,7 @@ class DataWidget(QGroupBox):
             
         child = QTreeWidgetItem(parent)
         child.setText(1, bond_name)
-        child.setText(2, str(energy*E))
+        child.setText(2, str(round(energy*E,5)))
         parent.addChild(child)
         
         delete_button = QPushButton('')
@@ -470,12 +537,9 @@ class DataWidget(QGroupBox):
 
     def export_results(self, file='table.csv'):
         df = self.results.copy(deep=True)
-        df.index = range(len(df))
         if file.endswith('.pkl'):
             df.to_pickle(file)
-            return
-        
-        if file.endswith('.csv'):
+        elif file.endswith('.csv'):
             df.to_csv(file)
         elif file.endswith('.json'):
             try:

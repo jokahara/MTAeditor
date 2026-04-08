@@ -55,6 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chemEntityActionGroup = QtGui.QActionGroup(self, exclusive=True)
         #self.mol3d = Mol3D(self)
         self._fileName = None
+        self.file_out = None
         self._mol_file = None
         self._pkl_file = None
         self.initGUI(fileName=fileName)
@@ -85,6 +86,7 @@ class MainWindow(QtWidgets.QMainWindow):
             frag.mol = None
         self.n_frags = 0
         self.editor.setMinimumSize(650, 650)
+        self.dataBox.mode = '*' if '*' in self.dataBox.mode else ''
         return 
 
     def addFragment(self, mol_frag):
@@ -107,6 +109,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.editor.mol == None:
             return
 
+        self.dataBox.mode += 'MTA'
         cut1, cut2 = self.editor.GetSelectedCuts()
         for frag in self.dataBox.get_fragments(cut1, cut2):
             self.addFragment(frag)
@@ -119,8 +122,37 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.calcAction.setEnabled(False)
 
-        return
 
+    def rotateBond(self):
+        self.clearFragments()
+        if self.editor.mol == None:
+            return
+
+        self.dataBox.mode += 'ROT'
+        selected = self.editor._selectedAtoms[0]
+        new_mol = self.dataBox.internal_rotation(selected)
+        cut1, cut2 = self.editor.GetSelectedCuts()
+        for frag in self.dataBox.get_fragments(cut1, cut2):
+            self.addFragment(frag)
+
+        self.addFragment(new_mol)
+
+        if self.n_frags > 0:
+            self.editor.setMinimumSize(350, 350)
+            self.calcAction.setEnabled(True)
+
+    def simplifyMolecule(self):
+        if '*' in self.dataBox.mode:
+            return
+        
+        self.clearFragments()
+        cut1, cut2 = self.editor.GetSelectedCuts()
+        mol = self.dataBox.simplify(cut1 + cut2)
+        if mol is not None:
+            self.dataBox.mode = '*'
+            self.editor.clearAtomSelection()
+            self.editor.mol = mol
+        
     def showHydrogens(self):
         show = not self.showHsAction.isChecked()
         self.editor._removeHs = show
@@ -129,16 +161,13 @@ class MainWindow(QtWidgets.QMainWindow):
             frag._removeHs = show
             frag.molChanged.emit()
 
-        return
-
     def flatten(self):
         self.editor._flatten = self.cleanCoordinatesAction.isChecked()
         self.editor.molChanged.emit()
         for frag in self.fragments:
             frag._flatten = self.cleanCoordinatesAction.isChecked()
             frag.molChanged.emit()
-        return
-
+            
     def initGUI(self, fileName=None):
         self.setWindowTitle("rdEditor")
         self.setWindowIcon(QIcon.fromTheme("appicon"))
@@ -164,7 +193,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(split)
         self.fileName = fileName
 
-        self.filters = "CSV Files (*.csv *.csv);;Pickle Files (*.pkl *.pkl);;JSON Files (*.json *.json);;Any File (*)"
+        self.filters = "Any File (*.csv *.pkl *.json);; CSV Files (*.csv *.csv);;Pickle Files (*.pkl *.pkl);;JSON Files (*.json *.json)"
 
         self.SetupComponents()
 
@@ -370,16 +399,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mainToolBar.addAction(self.cutAction1)
         self.mainToolBar.addAction(self.cutAction2)
         self.mainToolBar.addAction(self.applyAction)
+        self.mainToolBar.addAction(self.rotateB)
+        self.mainToolBar.addAction(self.simplify)
+        self.mainToolBar.addSeparator()
         self.mainToolBar.addAction(self.calcAction)
-        #self.mainToolBar.addAction(self.addAction)
-        #self.mainToolBar.addAction(self.addBondAction)
-        #self.mainToolBar.addAction(self.replaceAction)
-        #self.mainToolBar.addAction(self.rsAction)
-        #self.mainToolBar.addAction(self.ezAction)
-        #self.mainToolBar.addAction(self.increaseChargeAction)
-        #self.mainToolBar.addAction(self.decreaseChargeAction)
-        #self.mainToolBar.addAction(self.numberAtom)
 
+        self.mainToolBar.addSeparator()
         self.mainToolBar.addAction(self.rotateL)
         self.mainToolBar.addAction(self.rotateU)
         self.mainToolBar.addAction(self.rotateD)
@@ -412,12 +437,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f"Mol file {filename} opened")
 
     def loadClusterFilter(self, file_in):
-        try:
-            self._pkl_file = file_in
-            self.dataBox.load_pickled_data(file_in, self._mol_file)
-            self.statusBar().showMessage(f"Pickle file {file_in} opened")
-        except:
-            self.editor.logger.error("Failed to load data.")
+        self._pkl_file = file_in
+        self.dataBox.load_pickled_data(file_in, self._mol_file)
+        self.statusBar().showMessage(f"Pickle file {file_in} opened")
 
 
     def openFile(self):
@@ -448,19 +470,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.fileName += ".mol"
 
     def saveFile(self):
-        #if self.fileName is not None:
-        #    Chem.MolToMolFile(self.editor.mol, str(self.fileName))
-        #else:
-        self.saveAsFile()
-
-    def saveAsFile(self):
-        self.fileName, self.filterName = QFileDialog.getSaveFileName(self, filter=self.filters)
-        if self.fileName != "":
-            if self.fileName.endswith((".csv", '.pkl', '.json')):
-                self.dataBox.export_results(self.fileName)
+        if self.file_out is not None:
+            if self.file_out.endswith((".csv", '.pkl', '.json')):
+                self.dataBox.export_results(self.file_out)
                 self.statusBar().showMessage("File {self.filename} saved", 2000)
             else:
+                self.file_out = None
                 self.statusBar().showMessage("Invalid file format", 2000)
+
+    def saveAsFile(self):
+        self.file_out, self.filterName = QFileDialog.getSaveFileName(self, filter=self.filters)
+        self.saveFile()
 
     def copy(self):
         selected_text = Chem.MolToSmiles(self.editor.mol, isomericSmiles=True)
@@ -485,11 +505,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.editor.logger.warning(f"Failed to parse the content of the clipboard as a SMILES: {repr(text)}")
 
     def clearCanvas(self):
-        self.clearFragments()
-        self.editor.clearAtomSelection()
-        self.editor.mol = None
-        self.dataBox.select_conformer(self.dataBox.conf_id)
-        self.statusBar().showMessage("Canvas Cleared")
+        if '*' in self.dataBox.mode and self.n_frags > 0:
+            self.clearFragments()
+            self.editor.clearAtomSelection()
+            self.dataBox.mode = '*'
+            return
+        else:
+            self.clearFragments()
+            self.editor.clearAtomSelection()
+            self.editor.mol = None
+            self.dataBox.select_conformer(self.dataBox.conf_id)
+            self.statusBar().showMessage("Canvas Cleared")
 
     def closeEvent(self, event):
         self.editor.logger.debug("closeEvent triggered")
@@ -708,7 +734,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Edit actions
         self.actionActionGroup = QtGui.QActionGroup(self, exclusive=True)
         self.selectAction = QAction(
-            QIcon.fromTheme("icons8-Cursor"),
+            QIcon.fromTheme("icons8-Edit"),
             "Se&lect",
             self,
             shortcut="Ctrl+L",
@@ -767,31 +793,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.calcAction.setEnabled(False)
         self.actionActionGroup.addAction(self.calcAction)
 
-
-        self.increaseChargeAction = QAction(
-            QIcon.fromTheme("icons8-Increase Font"),
-            "I&ncrease Charge",
-            self,
-            shortcut="Ctrl++",
-            statusTip="Increase Atom Charge",
-            triggered=self.setAction,
-            objectName="Increase Charge",
-            checkable=True,
-        )
-        self.actionActionGroup.addAction(self.increaseChargeAction)
-
-        self.decreaseChargeAction = QAction(
-            QIcon.fromTheme("icons8-Decrease Font"),
-            "D&ecrease Charge",
-            self,
-            shortcut="Ctrl+-",
-            statusTip="Decrease Atom Charge",
-            triggered=self.setAction,
-            objectName="Decrease Charge",
-            checkable=True,
-        )
-        self.actionActionGroup.addAction(self.decreaseChargeAction)
-
         self.numberAtom = QAction(
             QIcon.fromTheme("atommapnumber"),
             "Set atommap or R-group number",
@@ -815,7 +816,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.rotateU = QAction(
             QIcon.fromTheme("icons8-Up"),
-            "Rotate Up",
+            "Rotate U&p",
             self,
             statusTip="Rotate Up",
             triggered=self.rotate,
@@ -824,7 +825,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.rotateD = QAction(
             QIcon.fromTheme("icons8-Down"),
-            "Rotate Down",
+            "Rotate D&own",
             self,
             statusTip="Rotate Down",
             triggered=self.rotate,
@@ -833,11 +834,29 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.rotateR = QAction(
             QIcon.fromTheme("icons8-Right"),
-            "Rotate Right",
+            "Rotate R&ight",
             self,
             statusTip="Rotate Right",
             triggered=self.rotate,
             objectName="Right",
+        )
+
+        self.rotateB = QAction(
+            QIcon.fromTheme("icons8-Reset"),
+            "R&otate B&ond",
+            self,
+            statusTip="Rotate a bond 180 degrees",
+            triggered=self.rotateBond,
+            objectName="RotateBond",
+        )
+
+        self.simplify = QAction(
+            QIcon.fromTheme("icons8-Decrease Font"),
+            "S&implify",
+            self,
+            statusTip="Simplify molecule by removing cuts",
+            triggered=self.simplifyMolecule,
+            objectName="Simplify",
         )
 
         # Misc Actions

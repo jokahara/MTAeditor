@@ -2,9 +2,13 @@ from rdkit import Chem
 import numpy as np
 
 from filter import ClusterFilter
+HC_DIST = 1.093 # H-C bond distance
 
 def load_cluster_filter(file_in, mol_file='parameters.txt') -> ClusterFilter:
     cf = ClusterFilter(file_in, mol_file=mol_file)
+    cf.set_Hbond('H', 'O', (1.4, 3.0), (100, 180))
+    cf.set_Hbond('H', 'N', (1.4, 3.0), (100, 180))
+    cf.set_Hbond('N', 'O', (2.4, 3.5), (70, 110))
     return cf
 
 def generate_mol(cluster_filter: ClusterFilter, ct: str) -> Chem.Mol:
@@ -23,13 +27,29 @@ def generate_mol(cluster_filter: ClusterFilter, ct: str) -> Chem.Mol:
             
     return mol
 
-def add_hydrogen_bonds(mol, donors, acceptors):
+def add_hydrogen_bonds(mol, donors, acceptors, parent: Chem.Mol=None):
     from topologger import add_Hbonds
-    mol = add_Hbonds(mol, donors, acceptors, addId=True)
-    
+    if parent is None:
+        mol = add_Hbonds(mol, donors, acceptors, addId=True)
+    else:
+        from rdkit.Chem import RWMol, SanitizeMol, BondType
+        mol = RWMol(mol) # make sure to copy the cluster
+
+        idx = get_props(mol)
+        # Copy hydrogen bond labels
+        for d, a in zip(donors, acceptors):
+            if d not in idx or a not in idx:
+                continue
+            
+            label = parent.GetBondBetweenAtoms(int(d),int(a)).GetProp('bondNote')
+            i1, i2 = get_idx(idx, [d,a])
+            mol.AddBond(i1,i2, BondType.HYDROGEN)
+            mol.GetBondBetweenAtoms(i1, i2).SetProp('bondNote', label+'*')
+
+        SanitizeMol(mol)
+
     return mol
 
-HC_DIST = 1.093 # H-C bond distance
 
 def get_bonds(mol):
     bonds = {(b.GetBeginAtom().GetIntProp('atomNote'), b.GetEndAtom().GetIntProp('atomNote')) for b in mol.GetBonds()
@@ -37,11 +57,9 @@ def get_bonds(mol):
     return bonds
 
 def get_props(mol):
-    return [a.GetIntProp('atomNote') for a in mol.GetAtoms() 
-            if a.HasProp('atomNote')]
+    return [a.GetIntProp('atomNote') if a.HasProp('atomNote') else -1 for a in mol.GetAtoms()]
 
-def get_idx(mol: Chem.Mol, values):
-    props = get_props(mol)
+def get_idx(props, values):
     if isinstance(values, int):
         return props.index(values)
     
@@ -52,8 +70,10 @@ def cut_molecule(mol, cut_at) -> Chem.Mol:
         cut_at = [cut_at]
 
     mol = Chem.RWMol(mol)
-    cuts = [get_idx(mol, c) for c in cut_at]
+    props = get_props(mol)
+    cuts = [get_idx(props, c) for c in cut_at]
     for a, b in cuts:
+        # set bond length to that of a mean H-C bond
         Chem.rdMolTransforms.SetBondLength(mol.GetConformer(0), a, b, HC_DIST)
 
     frags = Chem.FragmentOnBonds(mol, [mol.GetBondBetweenAtoms(a,b).GetIdx() for a,b in cuts])
@@ -61,6 +81,38 @@ def cut_molecule(mol, cut_at) -> Chem.Mol:
 
     new_mol = frags[0] if cut_at[0][0] in get_props(frags[0]) else frags[1]
     return new_mol
+
+def rotate_bond(mol, j, k, deg=180):
+    mol = Chem.RWMol(mol)
+    bond = mol.GetBondBetweenAtoms(j, k)
+    if bond.GetBondType() != Chem.BondType.SINGLE and bond.GetBondType() != Chem.BondType.DOUBLE:
+        return
+    
+    a = bond.GetBeginAtom()
+    b = bond.GetEndAtom()
+    if a.GetAtomicNum() == 1 or b.GetAtomicNum() == 1:
+        return
+    
+    from rdkit.Chem import rdMolTransforms
+    for bond in a.GetBonds():
+        i = bond.GetBeginAtomIdx()
+        if i != j and i != k:
+            break
+        i = bond.GetEndAtomIdx()
+        if i != j and i != k:
+            break
+    for bond in b.GetBonds():
+        l = bond.GetBeginAtomIdx()
+        if l != j and l != k:
+            break
+        l = bond.GetEndAtomIdx()
+        if l != j and l != k:
+            break
+    
+    deg0 = rdMolTransforms.GetDihedralDeg(mol.GetConformer(0), i,j,k,l)
+    rdMolTransforms.SetDihedralDeg(mol.GetConformer(0), i,j,k,l, deg0 + deg)
+
+    return mol
 
 def rot_ar_x(radi):
     return  np.array([[1, 0, 0, 0],
@@ -116,6 +168,22 @@ def write_json(file, df):
                     'length': list(b['length'].values), 'angle': list(b['angle'].values), 
                     'fragments': list(b['fragments'].values)
                 }
-                
+
     with open(file, "w") as f:
         json.dump(data, f, cls=Encoder)
+
+if __name__ == '__main__':
+    from time import time
+    mol = Chem.MolFromSmiles('O'+'CO'*100)
+    mol = Chem.AddHs(mol)
+    
+    for a in mol.GetAtoms():
+        a.SetIntProp('atomNote', a.GetIdx())
+        
+    t0 = time()
+    props = get_props(mol)
+    for i in range(10):
+        for a in mol.GetAtoms():
+            idx = get_idx(mol, range(400), props)
+
+    print(time()-t0)

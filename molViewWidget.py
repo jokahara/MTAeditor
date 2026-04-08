@@ -182,6 +182,8 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
 
 
     def getProp(self, mol, i):
+        if i is None:
+            return
         a = mol.GetAtomWithIdx(i)
         return a.GetIntProp('atomNote') if a.HasProp('atomNote') else ''
     
@@ -201,15 +203,18 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
             if self.mol.GetAtomWithIdx(atomidx).GetSymbol() == 'H':
                 # TODO: implement a whole monomer removal
                 return
-            if len(self._selectedAtoms[cut]) > 0 and len(self._selectedAtoms[cut][-1]) == 1:
+            
+            if len(self._selectedAtoms[cut]) > 0 and self._selectedAtoms[cut][-1][-1] is None:
                 prev = self._selectedAtoms[cut][-1][0]
                 b = self.mol.GetBondBetweenAtoms(prev, atomidx)
-                if b == None:
+                if b is None:
+                    self._selectedAtoms[cut].pop()
                     return
-                self._selectedAtoms[cut][-1].insert(0, atomidx)
+                self._selectedAtoms[cut][-1][-1] = self._selectedAtoms[cut][-1][0]
+                self._selectedAtoms[cut][-1][0] = atomidx
                 self.selectionChanged.emit()
             else:
-                self._selectedAtoms[cut].append([atomidx])
+                self._selectedAtoms[cut].append([atomidx, None])
                 self.selectionChanged.emit()
         elif atomidx not in self._selectedAtoms[cut]:    
             self._selectedAtoms[0].append(atomidx)
@@ -245,8 +250,8 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
             self.selectionChanged.emit()
 
     def GetSelectedCuts(self):
-        cut1 = self._selectedAtoms[1]
-        cut2 = self._selectedAtoms[2]
+        cut1 = [[self.getProp(self.mol, a), self.getProp(self.mol, b)] for a,b in self._selectedAtoms[1]]
+        cut2 = [[self.getProp(self.mol, a), self.getProp(self.mol, b)] for a,b in self._selectedAtoms[2]]
         return cut1, cut2
 
     @property
@@ -267,39 +272,45 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
         if len(self.selectedAtoms) == 0:
             return {}, {}
         
+        selectedAtoms = {0: [self.getProp(self.mol, a) for a in self._selectedAtoms[0]],
+                         1: [[self.getProp(self.mol, a), self.getProp(self.mol, b)] for a,b in self._selectedAtoms[1]],
+                         2: [[self.getProp(self.mol, a), self.getProp(self.mol, b)] for a,b in self._selectedAtoms[2]]}
+
         atom_cols = defaultdict(list)
         bond_cols = defaultdict(list)
-        atom_cols.update({self.getIdx(self._drawmol, a): [self.color_list[0]] for a in self._selectedAtoms[0]})
-        for i in [1,2]:
-            for pair in self._selectedAtoms[i]: 
-                for a in pair: 
-                    atom_cols[self.getIdx(self._drawmol, a)].append(self.color_list[i])
-                    
+        atom_cols.update({self.getIdx(self._drawmol, a): [self.color_list[0]] for a in selectedAtoms[0]})
         for bond in self._drawmol.GetBonds():
-            a,b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
             a, b = self.getProp(self._drawmol, a), self.getProp(self._drawmol, b)
-            
-            if (a in self._selectedAtoms[0]) and (b in self._selectedAtoms[0]):
+            if (a in selectedAtoms[0]) and (b in selectedAtoms[0]):
                 bond_cols[bond.GetIdx()].append(self.color_list[0])
-            for i in [1,2]:
-                for pair in self._selectedAtoms[i]: 
-                    if len(pair) < 2:
-                        continue
-                    pair[0] = self.getProp(self._drawmol, pair[0])
-                    pair[1] = self.getProp(self._drawmol, pair[1])
-                    if (a in pair) and (b in pair):
+
+        for i in [1,2]:
+            for a, b in selectedAtoms[i]: 
+                idx1 = self.getIdx(self._drawmol, a)
+                atom_cols[idx1].append(self.color_list[i])
+                if b is not None:
+                    idx2 = self.getIdx(self._drawmol, b)
+                    atom_cols[idx2].append(self.color_list[i])
+
+                    #idx1 = self.getProp(self._drawmol, idx1)
+                    #idx1 = self.getProp(self._drawmol, idx2)
+                    bond = self._drawmol.GetBondBetweenAtoms(idx1, idx2)
+                    if bond is not None:
                         bond_cols[bond.GetIdx()].append(self.color_list[i])
-                        
+
         return dict(atom_cols), dict(bond_cols)
 
     @property
     def radii(self):
-        atom_radii = {self.getIdx(self._drawmol, a): 0.4 for a in self._selectedAtoms[0]}
+        atom_radii = {self.getIdx(self._drawmol, self.getProp(self.mol, a)): 0.4 for a in self._selectedAtoms[0]}
         for i in [1, 2]:
-            for s in self._selectedAtoms[i]: 
-                if len(s) > 1:
-                    atom_radii [self.getIdx(self._drawmol, s[0])] = 0.4
-                atom_radii[self.getIdx(self._drawmol, s[-1])] = 0.25
+            for a, b in self._selectedAtoms[i]: 
+                if b is None:
+                    atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, a))] = 0.25
+                else:
+                    atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, a))] = 0.4
+                    atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, b))] = 0.25
 
         return atom_radii
 
@@ -428,6 +439,7 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
             # chiraltags = Chem.FindMolChiralCenters(self._drawmol)
             #self.drawer.SetDrawOptions(self._moldrawoptions)
             opts = self.drawer.drawOptions()
+            opts.dummiesAreAttachments = True
             if self._darkmode:
                 rdMolDraw2D.SetDarkMode(opts)
             if (not self.molecule_sanitizable) and self.unsanitizable_background_colour:
