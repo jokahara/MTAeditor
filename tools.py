@@ -66,34 +66,46 @@ def get_idx(props, values):
     return [props.index(a) for a in values]
 
 def cut_molecule(mol, cut_at) -> Chem.Mol:
-    if isinstance(cut_at[0], int):
-        cut_at = [cut_at]
+    try:
+        if isinstance(cut_at[0], int):
+            cut_at = [cut_at]
 
-    mol = Chem.RWMol(mol)
-    props = get_props(mol)
-    cuts = [get_idx(props, c) for c in cut_at]
-    for a, b in cuts:
-        # set bond length to that of a mean H-C bond
-        Chem.rdMolTransforms.SetBondLength(mol.GetConformer(0), a, b, HC_DIST)
+        mol = Chem.RWMol(mol)
+        props = get_props(mol)
+        cuts = [get_idx(props, c) for c in cut_at]
+        for a, b in cuts:
+            # set bond length to that of a mean H-C bond
+            Chem.rdMolTransforms.SetBondLength(mol.GetConformer(0), a, b, HC_DIST)
 
-    frags = Chem.FragmentOnBonds(mol, [mol.GetBondBetweenAtoms(a,b).GetIdx() for a,b in cuts])
-    frags = Chem.GetMolFrags(frags, asMols=True)
+        frags = Chem.FragmentOnBonds(mol, [mol.GetBondBetweenAtoms(a,b).GetIdx() for a,b in cuts])
+        frags = Chem.GetMolFrags(frags, asMols=True)
 
-    new_mol = frags[0] if cut_at[0][0] in get_props(frags[0]) else frags[1]
-    return new_mol
+        new_mol = frags[0] if cut_at[0][0] in get_props(frags[0]) else frags[1]
+        return new_mol
+    except: 
+        return None
 
-def rotate_bond(mol, j, k, deg=180):
+def rotate_bond(mol, j, k, l=None, deg=180):
+    from rdkit.Chem import rdMolTransforms
+    
     mol = Chem.RWMol(mol)
     bond = mol.GetBondBetweenAtoms(j, k)
     if bond.GetBondType() != Chem.BondType.SINGLE and bond.GetBondType() != Chem.BondType.DOUBLE:
         return
+    if l is not None:
+        bond2 = mol.GetBondBetweenAtoms(k, l)
+        if bond2.GetBondType() != Chem.BondType.SINGLE and bond2.GetBondType() != Chem.BondType.DOUBLE:
+            return
+        
+        #deg0 = rdMolTransforms.GetAngleDeg(mol.GetConformer(0), j, k, l)
+        rdMolTransforms.SetAngleDeg(mol.GetConformer(0), j, k, l, deg)
+        return mol 
     
     a = bond.GetBeginAtom()
     b = bond.GetEndAtom()
     if a.GetAtomicNum() == 1 or b.GetAtomicNum() == 1:
         return
     
-    from rdkit.Chem import rdMolTransforms
     for bond in a.GetBonds():
         i = bond.GetBeginAtomIdx()
         if i != j and i != k:

@@ -252,10 +252,7 @@ class MolEditWidget(MolWidget):
             #    self.toogleRS(object1)
             #case (Chem.rdchem.Bond(), None, "EZtoggle"):
             #    self.toogleEZ(object1)
-
-            # Canvas click events
-            case (Point2D(), None, "Select"):
-                self.clearAtomSelection()
+            
 
             # Drag events
             # Atom to Atom

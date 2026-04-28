@@ -47,11 +47,6 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
         # Color options
         self.color_list = [hex2color("#8cd2f9"), hex2color("#df59b0"), hex2color("#9dc857")]
 
-        # Sanitization Settings
-        self._kekulize = False
-        self._sanitize = False
-        self._updatepropertycache = False
-
         # Draw options
         self._removeHs = True
         if moldrawoptions is None:
@@ -168,8 +163,8 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
                 if atom.GetAtomicNum() == 0:
                     if not atom.HasProp("dummyLabel") or atom.GetProp("dummyLabel") == "*":
                         atom.SetProp("dummyLabel", "R")
-                    else:
-                        print(atom.GetPropsAsDict())
+                    #else:
+                    #    print(atom.GetPropsAsDict())
 
             self._mol = mol
             self.molChanged.emit()
@@ -272,45 +267,50 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
         if len(self.selectedAtoms) == 0:
             return {}, {}
         
-        selectedAtoms = {0: [self.getProp(self.mol, a) for a in self._selectedAtoms[0]],
-                         1: [[self.getProp(self.mol, a), self.getProp(self.mol, b)] for a,b in self._selectedAtoms[1]],
-                         2: [[self.getProp(self.mol, a), self.getProp(self.mol, b)] for a,b in self._selectedAtoms[2]]}
+        try:
+            selectedAtoms = {0: [self.getProp(self.mol, a) for a in self._selectedAtoms[0]],
+                            1: [[self.getProp(self.mol, a), self.getProp(self.mol, b)] for a,b in self._selectedAtoms[1]],
+                            2: [[self.getProp(self.mol, a), self.getProp(self.mol, b)] for a,b in self._selectedAtoms[2]]}
+            atom_cols = defaultdict(list)
+            bond_cols = defaultdict(list)
+            atom_cols.update({self.getIdx(self._drawmol, a): [self.color_list[0]] for a in selectedAtoms[0]})
+            for bond in self._drawmol.GetBonds():
+                a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+                a, b = self.getProp(self._drawmol, a), self.getProp(self._drawmol, b)
+                if (a in selectedAtoms[0]) and (b in selectedAtoms[0]):
+                    bond_cols[bond.GetIdx()].append(self.color_list[0])
 
-        atom_cols = defaultdict(list)
-        bond_cols = defaultdict(list)
-        atom_cols.update({self.getIdx(self._drawmol, a): [self.color_list[0]] for a in selectedAtoms[0]})
-        for bond in self._drawmol.GetBonds():
-            a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-            a, b = self.getProp(self._drawmol, a), self.getProp(self._drawmol, b)
-            if (a in selectedAtoms[0]) and (b in selectedAtoms[0]):
-                bond_cols[bond.GetIdx()].append(self.color_list[0])
+            for i in [1,2]:
+                for a, b in selectedAtoms[i]: 
+                    idx1 = self.getIdx(self._drawmol, a)
+                    atom_cols[idx1].append(self.color_list[i])
+                    if b is not None:
+                        idx2 = self.getIdx(self._drawmol, b)
+                        atom_cols[idx2].append(self.color_list[i])
+                        bond = self._drawmol.GetBondBetweenAtoms(idx1, idx2)
+                        if bond is not None:
+                            bond_cols[bond.GetIdx()].append(self.color_list[i])
 
-        for i in [1,2]:
-            for a, b in selectedAtoms[i]: 
-                idx1 = self.getIdx(self._drawmol, a)
-                atom_cols[idx1].append(self.color_list[i])
-                if b is not None:
-                    idx2 = self.getIdx(self._drawmol, b)
-                    atom_cols[idx2].append(self.color_list[i])
-
-                    #idx1 = self.getProp(self._drawmol, idx1)
-                    #idx1 = self.getProp(self._drawmol, idx2)
-                    bond = self._drawmol.GetBondBetweenAtoms(idx1, idx2)
-                    if bond is not None:
-                        bond_cols[bond.GetIdx()].append(self.color_list[i])
+        except:
+            atom_cols = {}
+            bond_cols = {}
+        
 
         return dict(atom_cols), dict(bond_cols)
 
     @property
     def radii(self):
-        atom_radii = {self.getIdx(self._drawmol, self.getProp(self.mol, a)): 0.4 for a in self._selectedAtoms[0]}
-        for i in [1, 2]:
-            for a, b in self._selectedAtoms[i]: 
-                if b is None:
-                    atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, a))] = 0.25
-                else:
-                    atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, a))] = 0.4
-                    atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, b))] = 0.25
+        try:
+            atom_radii = {self.getIdx(self._drawmol, self.getProp(self.mol, a)): 0.4 for a in self._selectedAtoms[0]}
+            for i in [1, 2]:
+                for a, b in self._selectedAtoms[i]: 
+                    if b is None:
+                        atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, a))] = 0.25
+                    else:
+                        atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, a))] = 0.4
+                        atom_radii[self.getIdx(self._drawmol, self.getProp(self.mol, b))] = 0.25
+        except:
+            atom_radii = {}
 
         return atom_radii
 
@@ -319,7 +319,7 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
     # Actions and functions
     @QtCore.Slot()
     def draw(self):
-        self.logger.debug("Updating SVG")
+        #self.logger.debug("Updating SVG")
         svg = self.getMolSvg()
         self.load(QtCore.QByteArray(svg.encode("utf-8")))
 
@@ -331,7 +331,7 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
 
     @QtCore.Slot()
     def changeSanitizeStatus(self, value):
-        self.logger.debug(f"changeBorder called with value {value}")
+        #self.logger.debug(f"changeBorder called with value {value}")
         if value.upper() == "SANITIZABLE":
             self.molecule_sanitizable = True
         else:
@@ -370,7 +370,7 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
         self.draw()
 
     def updateStereo(self):
-        self.logger.debug("Updating stereo info")
+        #self.logger.debug("Updating stereo info")
         for atom in self.mol.GetAtoms():
             if atom.HasProp("_CIPCode"):
                 atom.ClearProp("_CIPCode")
@@ -383,26 +383,13 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
 
     sanitizeSignal = QtCore.Signal(str, name="sanitizeSignal")
 
-    def updateStereo(self):
-        self.logger.debug("Updating stereo info")
-        for atom in self.mol.GetAtoms():
-            if atom.HasProp("_CIPCode"):
-                atom.ClearProp("_CIPCode")
-        for bond in self.mol.GetBonds():
-            if bond.HasProp("_CIPCode"):
-                bond.ClearProp("_CIPCode")
-        Chem.rdmolops.SetDoubleBondNeighborDirections(self.mol)
-        self.mol.UpdatePropertyCache(strict=False)
-        Chem.rdCIPLabeler.AssignCIPLabels(self.mol)
-
     @QtCore.Slot()
     def sanitizeDrawMol(self, kekulize=False, drawkekulize=False):
 
         self.updateStereo()
-        # self._drawmol_test = Chem.Mol(self._mol.ToBinary())  # Is this necessary?
-        # self._drawmol = Chem.Mol(self._mol.ToBinary())  # Is this necessary?
-        self._drawmol_test = copy.deepcopy(self._mol)  # Is this necessary?
-        self._drawmol = copy.deepcopy(self._mol)  # Is this necessary?
+        self._drawmol_test = copy.deepcopy(self._mol) 
+        self._drawmol = copy.deepcopy(self._mol)
+        
         try:
             Chem.SanitizeMol(self._drawmol_test)
             self.sanitizeSignal.emit("Sanitizable")
@@ -412,21 +399,7 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
 
         if self._flatten:
             self.computeNewCoords(self._drawmol)
-            # try:
-            #     self._drawmol.UpdatePropertyCache(strict=False)
-            # except Exception as e:
-            #     self.sanitizeSignal.emit("UpdatePropertyCache FAIL")
-            #     self.logger.error("Update Property Cache failed")
-        # # Kekulize
-        # if kekulize:
-        #     try:
-        #         Chem.Kekulize(self._drawmol)
-        #     except Exception as e:
-        #         self.logger.warning("Unkekulizable")
-        # try:
-        #     self._drawmol = rdMolDraw2D.PrepareMolForDrawing(self._drawmol, kekulize=drawkekulize)
-        # except ValueError:  # <- can happen on a kekulization failure
-        #     self._drawmol = rdMolDraw2D.PrepareMolForDrawing(self._drawmol, kekulize=False)
+            
         self._drawmol = rdMolDraw2D.PrepareMolForDrawing(self._drawmol, kekulize=False)
 
     finishedDrawing = QtCore.Signal(name="finishedDrawing")
@@ -435,22 +408,13 @@ class MolWidget(QtSvgWidgets.QSvgWidget):
         self.drawer = rdMolDraw2D.MolDraw2DSVG(300, 300)
         
         if self._drawmol is not None:
-            # Chiral tags on R/S
-            # chiraltags = Chem.FindMolChiralCenters(self._drawmol)
-            #self.drawer.SetDrawOptions(self._moldrawoptions)
             opts = self.drawer.drawOptions()
             opts.dummiesAreAttachments = True
             if self._darkmode:
                 rdMolDraw2D.SetDarkMode(opts)
             if (not self.molecule_sanitizable) and self.unsanitizable_background_colour:
                 opts.setBackgroundColour(self.unsanitizable_background_colour)
-            # opts.prepareMolsBeforeDrawing = True
-            # opts.addStereoAnnotation = True  # Show R/S and E/Z
-            # opts.unspecifiedStereoIsUnknown = True  # Show wiggly bond at undefined stereo centre
-            # for tag in chiraltags:
-            #     idx = tag[0]
-            #     opts.atomLabels[idx] = self._drawmol.GetAtomWithIdx(idx).GetSymbol() + ":" + tag[1]
-
+                
             if self._removeHs:
                 self._drawmol = Chem.RemoveHs(self._drawmol)
 

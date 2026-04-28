@@ -11,14 +11,14 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def get_calculator():
     from orb_models.forcefield import pretrained
-    from orb_models.forcefield.calculator import ORBCalculator
+    from orb_models.forcefield.inference.calculator import ORBCalculator
 
     device = 'cpu'
-    model = pretrained.orb_v3_conservative_omol(
+    model, atoms_adapter = pretrained.orb_v3_conservative_omol(
         device=device,
         precision="float64",   # or "float32-high(est)"
     )
-    calculator = ORBCalculator(model, device=device)
+    calculator = ORBCalculator(model, atoms_adapter, device=device)
 
     # test run to complete loading
     from ase import build
@@ -62,7 +62,7 @@ def get_rotational_energies(mol, bond_idx, calculator, conf=0, charge=0, spin=1)
     if mol is None:
         return
 
-    i, j = bond_idx
+    #i, j = bond_idx
     angles = np.arange(360)
     results = np.zeros(360)
     idx = []
@@ -70,7 +70,7 @@ def get_rotational_energies(mol, bond_idx, calculator, conf=0, charge=0, spin=1)
         if results[deg] != 0:
             return
         
-        mol2 = rotate_bond(mol, i, j, deg)
+        mol2 = rotate_bond(mol, *bond_idx, deg=deg)
         atoms = mol_to_atoms(mol2, conf)
         atoms.info = {'charge': charge, 'spin': spin}
         atoms.calc = calculator
@@ -80,11 +80,17 @@ def get_rotational_energies(mol, bond_idx, calculator, conf=0, charge=0, spin=1)
     
         atoms.calc = None
 
-    start = 0
-    end = 360
-    step = 30
-    n = 1
     print('Scanning:')
+
+    if len(bond_idx) == 3:
+        start = 90
+        end = 270
+        step = 15
+    else:
+        start = 0
+        end = 360
+        step = 30
+    n = 1
 
     while n < 8:
         print('Round', n)

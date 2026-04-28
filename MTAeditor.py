@@ -149,9 +149,9 @@ class MainWindow(QtWidgets.QMainWindow):
         cut1, cut2 = self.editor.GetSelectedCuts()
         mol = self.dataBox.simplify(cut1 + cut2)
         if mol is not None:
-            self.dataBox.mode = '*'
             self.editor.clearAtomSelection()
             self.editor.mol = mol
+            self.dataBox.patterns_table.match_all_patterns()
         
     def showHydrogens(self):
         show = not self.showHsAction.isChecked()
@@ -190,6 +190,7 @@ class MainWindow(QtWidgets.QMainWindow):
         split = QSplitter(self)
         split.addWidget(box)
         split.addWidget(self.dataBox)
+        self.dataBox.resize(480, self.dataBox.height())
         self.setCentralWidget(split)
         self.fileName = fileName
 
@@ -205,7 +206,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.loadFile()
 
         self.editor.sanitizeSignal.connect(self.infobar.setText)
-        
         self.show()
 
     def getAllActionsInMenu(self, qmenu: QMenu):
@@ -887,7 +887,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "Recalculate coordinates &F",
             self,
             shortcut="Ctrl+F",
-            statusTip="Re-calculates coordinates and redraw",
+            statusTip="Re-calculates coordinates and redraws a flattened molecule",
             triggered=self.flatten,
             checkable=True,
             objectName="Recalculate Coordinates",
