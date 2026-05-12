@@ -9,7 +9,7 @@ E = units.Ha / (units.kcal/units.mol)
 import torch
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-def get_calculator():
+def get_orb_calculator():
     from orb_models.forcefield import pretrained
     from orb_models.forcefield.inference.calculator import ORBCalculator
 
@@ -28,6 +28,13 @@ def get_calculator():
     el = atoms.get_potential_energy() / units.Ha
 
     return calculator
+
+def get_xtb_calculator():
+    import tblite
+    from tblite.ase import TBLite
+    TBLite()
+
+    return
 
 def mol_to_atoms(mol, conf=0):
     symbols = []

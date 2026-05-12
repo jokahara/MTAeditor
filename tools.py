@@ -184,6 +184,135 @@ def write_json(file, df):
     with open(file, "w") as f:
         json.dump(data, f, cls=Encoder)
 
+
+def find_rings(s):
+    rings = {}
+    for i, c in enumerate(s):
+        if c.isnumeric() and s[i-1] != '#':
+            if c in rings:
+                rings[c].append(i)
+            else: 
+                rings[c] = [i]
+    return rings
+
+def find_brackets(s):
+    stack = []
+    brackets = []
+    for i, c in enumerate(s):
+        if c=="(":
+            stack.append([c, i])
+        elif c==")":
+            _, idx = stack.pop()
+            if i+1 == len(s):
+                break
+            brackets.append([idx, i])
+
+    brackets = {k: v for k, v in brackets}
+    return brackets
+
+# recursively replace occurences of X with dummies
+def add_dummies(patt: str, order=None):
+    import re
+    n = patt.count('X')
+    X = ['C(-*)(-*)(-*)', 'C(-*)(=*)', 'c(:c)(:c)']
+    size = [3, 2, 2]
+    stripped = re.sub('[^a-zA-Z*]', '', patt)
+    
+    if order is None:
+        order = list(range(len(stripped)-n))
+
+    count = len(order)
+    patterns = []; orders = []
+    for x, s in zip(X, size):
+        p = patt.replace('C-X', x, 1)
+        start = stripped.find('X')
+        ord = order.copy()
+        for i in range(count, count+s):
+            ord.insert(start, i)
+            start+=1
+            
+        if n > 1:
+            p, o = add_dummies(p, ord)
+            patterns += p; orders += o
+        else:
+            patterns.append(p)
+            orders.append(ord)
+
+    return patterns, orders
+
+def generate_mol_pattern(patt: str):
+    patt = patt.replace('--', '~')
+    # recursively replace occurences of X with dummies
+
+    bonds="-=#:~"
+    chars = list(patt)
+    to_insert = {}
+
+    rings = find_rings(chars)
+    for s, e in rings.values():
+        if chars[e-1] in bonds:
+            to_insert[s] = chars[e-1]
+        elif chars[s-1] in bonds:
+            to_insert[e] = chars[s-1]
+        elif chars[s-1].islower() and chars[e-1].islower():
+            to_insert[e] = ':'
+            to_insert[s] = ':'
+        else:
+            to_insert[e] = '-'
+            to_insert[s] = '-'
+
+    brackets = find_brackets(chars)
+    i = 0
+    while i < len(chars)-1:
+        i+=1; e=i
+        c1 = chars[i-1]
+        c2 = chars[e]
+        if not (c1 in '(*' or c1.isalpha()):
+            continue
+        while not (c2.isalpha() or c2 in '*)['):
+            if c2 in ')[.':
+                break
+            if c2 == '(':
+                e = brackets[e]
+                c2 = chars[e+1]
+                
+            e+=1
+            if e > len(chars)-1:
+                break
+            c2 = chars[e]
+        if chars[e-1] in "-=#:~":
+            continue
+
+        if c1.islower() and c2.islower():
+            to_insert[e]=':'
+        elif c2.isalpha() or c2 in '*[':
+            to_insert[e]='-'
+
+    for k in sorted(to_insert.keys(), reverse=True):
+        chars.insert(k, to_insert[k])
+    smarts = ''.join(chars)
+
+    if 'X' in smarts:
+        smarts = smarts.replace('X-C', 'C-X')
+        patterns, orders = add_dummies(smarts)
+        orders = [sorted(range(len(ord)), key = lambda i: ord[i]) for ord in orders]
+    else:
+        patterns = [smarts]; orders = [None]
+
+    mols = []
+    for smarts, order in zip(patterns, orders):
+        try:
+            mol = Chem.MolFromSmarts(smarts)
+            Chem.SanitizeMol(mol)
+            if order is not None:
+                mol = Chem.RenumberAtoms(mol, order)
+            for atom in mol.GetAtoms():
+                atom.SetIntProp('atomNote', atom.GetIdx())
+            mols.append(mol)
+        except:
+            print('Failed with:', patt, '->', smarts)
+    return mols
+
 if __name__ == '__main__':
     from time import time
     mol = Chem.MolFromSmiles('O'+'CO'*100)

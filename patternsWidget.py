@@ -23,91 +23,7 @@ from PySide6.QtWidgets import (QLayout, QCheckBox, QComboBox, QFileDialog, QMess
                                QWidget, QFormLayout, QAbstractItemView)
 
 from molViewWidget import MolWidget
-
-def find_rings(s):
-    rings = {}
-    for i, c in enumerate(s):
-        if c.isnumeric() and s[i-1] != '#':
-            if c in rings:
-                rings[c].append(i)
-            else: 
-                rings[c] = [i]
-    return rings
-
-def find_brackets(s):
-    stack = []
-    brackets = []
-    for i, c in enumerate(s):
-        if c=="(":
-            stack.append([c, i])
-        elif c==")":
-            pair, idx = stack.pop()
-            brackets.append([idx, i])
-
-    brackets = {k: v for k, v in brackets}
-    return brackets
-
-def generate_mol_pattern(patt):
-    bonds="-=#:~"
-    patt = patt.replace('XC', '*C(*)(*)').replace('X', '(*)(*)*')
-    chars = list(patt.replace('--', '~'))
-    to_insert = {}
-
-    rings = find_rings(chars)
-    for s, e in rings.values():
-        if chars[e-1] in bonds:
-            to_insert[s] = chars[e-1]
-        elif chars[s-1] in bonds:
-            to_insert[e] = chars[s-1]
-        elif chars[s-1].islower() and chars[e-1].islower():
-            to_insert[e] = ':'
-            to_insert[s] = ':'
-        else:
-            to_insert[e] = '-'
-            to_insert[s] = '-'
-
-    brackets = find_brackets(chars)
-    i = 0
-    while i < len(chars)-1:
-        i+=1; e=i
-        c1 = chars[i-1]
-        c2 = chars[e]
-        if not (c1 in '(*' or c1.isalpha()):
-            continue
-        while not (c2.isalpha() or c2 in '*)['):
-            if c2 in ')[.':
-                break
-            if c2 == '(':
-                e = brackets[e]
-                c2 = chars[e+1]
-            e+=1
-            if e > len(chars)-1:
-                break
-            c2 = chars[e]
-        if chars[e-1] in "-=#:~":
-            continue
-
-        if c1.islower() and c2.islower():
-            to_insert[e]=':'
-        elif c2.isalpha() or c2 in '*[':
-            to_insert[e]='-'
-
-    for k in sorted(to_insert.keys(), reverse=True):
-        chars.insert(k, to_insert[k])
-
-    smarts = ''.join(chars)
-    try:
-        mol = Chem.MolFromSmarts(smarts)
-        Chem.SanitizeMol(mol)
-        for atom in mol.GetAtoms():
-            atom.SetIntProp('atomNote', atom.GetIdx())
-
-        #print(smarts)
-        return mol
-    except:
-        print('Failed with:', patt, '->', smarts)
-        return 
-
+from tools import generate_mol_pattern
 
 def group_widgets(parent, widgets):
     group = QWidget(parent)
@@ -185,7 +101,7 @@ class PatternsWidget(QWidget):
         self.findButton = QPushButton('Find matches')
         self.findButton.setCheckable(True)
         self.findButton.clicked.connect(self.match_all_patterns)
-        
+
         self.calcButton1 = QPushButton('Calculate Selected')
         self.calcButton1.clicked.connect(self.calculate)
         self.calcButton1.setEnabled(False)
@@ -199,7 +115,7 @@ class PatternsWidget(QWidget):
         self.table.setHorizontalHeaderLabels(['Descriptor', 'Cut 1', 'Cut 2' , 'Shift', ''])
         self.table.cellChanged.connect(self.edit_pattern)
         self.current_match = -1
-        self.table.cellClicked.connect(lambda row, col: self.draw_pattern(row, col, True))
+        self.table.cellClicked.connect(lambda row, col: self.draw_pattern(row, col, clicked=True))
         self.table.currentCellChanged.connect(self.draw_pattern)
         layout.addWidget(self.table, 2, 0, 1, 3)
 
@@ -211,7 +127,7 @@ class PatternsWidget(QWidget):
         self.delButton = QPushButton('Delete pattern')
         self.delButton.clicked.connect(self.delete_pattern)
         layout.addWidget(group_widgets(self, [self.addButton, self.delButton]), 3, 0, 1, 3)   
-
+        
         self.canvas = MolWidget()
         self.canvas.setMinimumSize(300,200)
         layout.addWidget(self.canvas, 4, 0, 1, 3)
@@ -264,7 +180,7 @@ class PatternsWidget(QWidget):
         mol1 = Chem.CopyMolSubset(mol, selected)
         smiles = Chem.MolToSmiles(mol1, isomericSmiles=False)
         print('Selected:', smiles)
-        frag = generate_mol_pattern(smiles)
+        frag = generate_mol_pattern(smiles)[0]
         props = {atom.GetIntProp('atomNote'): atom.GetIdx() for atom in mol1.GetAtoms()}
         # map cuts to new indexes
         cut1 = [[props[a], props[b]] for a,b in cut1]
@@ -272,7 +188,7 @@ class PatternsWidget(QWidget):
         #print(props)
         # map from copied subset to new fragment
         match = mol1.GetSubstructMatch(frag)
-        match = {j: i for i,j in enumerate(match)}
+        match = {j: i for i, j in enumerate(match)}
         
         cut1 = [[match[a], match[b]] for a,b in cut1]
         cut2 = [[match[a], match[b]] for a,b in cut2]
@@ -289,7 +205,7 @@ class PatternsWidget(QWidget):
         if col == 0:
             self.df.loc[idx, 'SMILES'] = text
             mol = generate_mol_pattern(text)
-            self.df.loc[idx, 'Mol'] = mol
+            self.df.at[idx, 'Mol'] = mol
         elif col == 3:
             self.df.loc[idx, 'correction'] = float(text.replace(',', '.'))
             draw = False
@@ -303,10 +219,12 @@ class PatternsWidget(QWidget):
 
         if draw:
             self.draw_pattern(row, col)
+            if col > 0:
+                self.canvas.molChanged.emit()
         return 
     
     def hide_pattern(self):
-        self.table.cellChanged.disconnect()
+        self.table.blockSignals(True)
         
         row = self.table.currentRow()
         i = self.df.index[row]
@@ -315,7 +233,7 @@ class PatternsWidget(QWidget):
         for col in range(4):
             self.table.item(row, col).setForeground(color)
             
-        self.table.cellChanged.connect(self.edit_pattern)
+        self.table.blockSignals(True)
         return
 
     def delete_pattern(self):
@@ -342,7 +260,6 @@ class PatternsWidget(QWidget):
         
         file, _ = QFileDialog.getSaveFileName(self, filter="CSV Files (*.csv *.csv);; Any File (*.*)")
 
-        file = 'default_patterns.csv'
         df = self.df[['SMILES', 'cut1', 'cut2', 'correction', 'visible']]
         df.index = [i for i in range(len(df))]
         df.to_csv(file, sep=';')
@@ -351,8 +268,7 @@ class PatternsWidget(QWidget):
     
     def load_patterns(self, file='default_patterns.csv'):
         if not os.path.isfile(file):
-            file, _  = QFileDialog.getOpenFileName(self, caption="Open file")
-            return
+            file, _  = QFileDialog.getOpenFileName(self, caption="Open file", filter="CSV Files (*.csv *.csv)")
         
         self.fileDrop.setText(file)
 
@@ -403,7 +319,7 @@ class PatternsWidget(QWidget):
                 patterns.append(self.df.loc[idx, 'SMILES'])
                 corrections.append(self.df.loc[idx, 'correction'])
 
-        self.dataBox.mode = 'MTA'
+        self.dataBox.mode = 'MTA*' if '*' in self.dataBox.mode else 'MTA'
         self.dataBox.calculate_with_patterns(cuts, patterns, corrections)
         return
 
@@ -425,7 +341,14 @@ class PatternsWidget(QWidget):
         atom_idx = [a.GetIdx() for a in patt.GetAtoms()]
         matches = []
         for match in mol.GetSubstructMatches(patt):
+            #print(Chem.MolToSmiles(patt))
             #print(match)
+            #print(atom_idx, [atom.GetIntProp('atomNote') for atom in patt.GetAtoms()])
+
+            import pickle
+            with open('mol1.pkl', 'wb') as f:
+                pickle.dump((mol, patt), f)
+
             passed = True
             for i, a in zip(atom_idx, match):
                 for j, b in zip(atom_idx, match):
@@ -439,7 +362,6 @@ class PatternsWidget(QWidget):
                     # make sure there are no additional covalent bonds 
                     if (bond2.GetBondType() > 0) and (bond2.GetBondType() < 14):
                         if (bond1 is None) or bond2.GetBondType() != bond1.GetBondType():
-                            #print('None matching bond found:', bond2.GetBondType())
                             passed = False
                             break
                 if not passed:
@@ -460,13 +382,16 @@ class PatternsWidget(QWidget):
             self.calcButton2.setEnabled(False)
             return
         
-        self.calcButton1.setEnabled(True)
-        self.calcButton2.setEnabled(True)
+        if self.dataBox.calculator is not None:
+            self.calcButton1.setEnabled(True)
+            self.calcButton2.setEnabled(True)
         
         mol = self.editor.mol
         for row in range(self.table.rowCount()):
             idx = self.df.index[row]
-            matches = self.match_pattern(mol, self.df.loc[idx, 'Mol'])
+            matches = []
+            for patt in self.df.loc[idx, 'Mol']:
+                matches += self.match_pattern(mol, patt)
             if len(matches) > 0:
                 self.df.at[idx, 'matched'] = object()
                 self.df.at[idx, 'matched'] = matches
@@ -475,39 +400,49 @@ class PatternsWidget(QWidget):
                 
         return
 
-    def draw_pattern(self, row, col, clicked=False):
-        if col > 2: 
+    def draw_pattern(self, row, col, prev_row=-1, prev_col=-1, clicked=False):
+        if col > 3: 
             return
-
+        if not clicked and row == prev_row:
+            return
         #patt = self.table.item(row, 0).text()
         idx = self.df.index[row]
         self.canvas._selectedAtoms[1] = self.df.loc[idx, 'cut1']
         self.canvas._selectedAtoms[2] = self.df.loc[idx, 'cut2']
-        self.canvas.mol = self.df.loc[idx, 'Mol']
+        self.canvas.mol = self.df.loc[idx, 'Mol'][0]
 
         #import pickle
         #with open('mol1.pkl', 'wb') as f:
         #    pickle.dump((self.editor.mol, self.df.loc[idx, 'Mol']), f)
         # Try to find match in the molecule
-        matches = self.match_pattern(self.editor.mol, self.df.loc[idx, 'Mol'])
-        n = len(matches)
-        if n > 0:
-            self.editor.clearAtomSelection()
-            cut1 = self.df.loc[idx, 'cut1']
-            cut2 = self.df.loc[idx, 'cut2']
+        
 
-            # cycle through matches that get drawn
-            if clicked:
-                self.current_match += 1
-                if self.current_match >= n:
-                    self.current_match = 0
-            else:
+        matches = []
+        for patt in self.df.loc[idx, 'Mol']:
+            matches += self.match_pattern(self.editor.mol, patt)
+            
+        n = len(matches)
+        if n == 0:
+            return
+        
+        self.editor.clearAtomSelection()
+        cut1 = self.df.loc[idx, 'cut1']
+        cut2 = self.df.loc[idx, 'cut2']
+
+        # cycle through matches that get drawn
+        if clicked:
+            self.current_match += 1
+            if self.current_match >= n:
                 self.current_match = 0
             match = matches[self.current_match]
-            self.editor._selectedAtoms[1].extend([match[a], match[b]] for a, b in cut1)
-            self.editor._selectedAtoms[2].extend([match[a], match[b]] for a, b in cut2)
-            #self.editor._selectedAtoms[0] = list(np.concatenate(matches))
-            self.editor.molChanged.emit()
+        else:
+            self.current_match = -1
+            match = matches[0]
+        
+        self.editor._selectedAtoms[1].extend([match[a], match[b]] for a, b in cut1)
+        self.editor._selectedAtoms[2].extend([match[a], match[b]] for a, b in cut2)
+        #self.editor._selectedAtoms[0] = list(np.concatenate(matches))
+        self.editor.molChanged.emit()
         
         return
     

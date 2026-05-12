@@ -190,7 +190,6 @@ class MainWindow(QtWidgets.QMainWindow):
         split = QSplitter(self)
         split.addWidget(box)
         split.addWidget(self.dataBox)
-        self.dataBox.resize(480, self.dataBox.height())
         self.setCentralWidget(split)
         self.fileName = fileName
 
@@ -307,9 +306,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # self.edit_menu = self.menuBar().addMenu("&Edit")
 
         self.toolMenu = self.menuBar().addMenu("&Tools")
-        #self.atomtypeMenu = self.menuBar().addMenu("&AtomTypes")
-        #self.bondtypeMenu = self.menuBar().addMenu("&BondTypes")
-        #self.templateMenu = self.menuBar().addMenu("Tem&plates")
         self.settingsMenu = self.menuBar().addMenu("&Settings")
         self.helpMenu = self.menuBar().addMenu("&Help")
 
@@ -327,21 +323,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.toolMenu.addAction(self.cutAction2)
         self.toolMenu.addAction(self.applyAction)
         self.toolMenu.addAction(self.calcAction)
-        #self.toolMenu.addAction(self.addAction)
-        # self.toolMenu.addAction(self.addBondAction)
-        # self.toolMenu.addAction(self.replaceAction)
-        #self.toolMenu.addAction(
-        #    self.rsAction
-        #)  # TODO, R/S and E/Z could be changed for a single action? it really depends if an atom or a bond is clicked!
-        #self.toolMenu.addAction(self.ezAction)
-        #self.toolMenu.addAction(self.increaseChargeAction)
-        #self.toolMenu.addAction(self.decreaseChargeAction)
-        #self.toolMenu.addAction(self.numberAtom)
 
         self.toolMenu.addSeparator()
         self.toolMenu.addAction(self.showHsAction)
         self.toolMenu.addAction(self.cleanCoordinatesAction)
-        #self.toolMenu.addAction(self.removeAction)
         self.toolMenu.addAction(self.clearCanvasAction)
 
         # Settings menu
@@ -513,8 +498,8 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.clearFragments()
             self.editor.clearAtomSelection()
-            self.editor.mol = None
-            self.dataBox.select_conformer(self.dataBox.conf_id)
+            #self.editor.mol = None
+            self.dataBox.select_conformer(int(self.dataBox.conf_select.text()))
             self.statusBar().showMessage("Canvas Cleared")
 
     def closeEvent(self, event):

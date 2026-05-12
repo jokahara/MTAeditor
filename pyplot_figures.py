@@ -1,7 +1,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from orb_calculator import E
+from calculators import E
 
 def plot_rotation(el, angle, label, title=None, peak_idx=None):
     if not plt.isinteractive():

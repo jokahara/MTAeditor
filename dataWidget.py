@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QLayout, QApplication, QCheckBox, QComboBox,
 from molEditWidget import MolEditWidget
 from patternsWidget import DropLineEdit, PatternsWidget
 from tools import *
-from orb_calculator import *
+from calculators import *
 
 MODEL_ENABLED = True
 
@@ -95,7 +95,7 @@ class DataWidget(QGroupBox):
             self.threadpool = QThreadPool.globalInstance()
             thread_count = self.threadpool.maxThreadCount()
             print(f"Multithreading with maximum {thread_count} threads")
-            loader = Worker(get_calculator)
+            loader = Worker(get_orb_calculator)
             loader.signals.result.connect(self.set_calculator)
             self.threadpool.start(loader)
         
@@ -122,28 +122,70 @@ class DataWidget(QGroupBox):
         main_layout.addWidget(self.conf_select, 1, 3) 
         main_layout.setColumnStretch(1,1)
 
-        # units in Ha, eV, kcal/mol
-        # sort by Elec. or Gibbs
-        # shifted to minimum check
-
         self.tabs = QTabWidget(self)
         main_layout.addWidget(self.tabs, 5, 0, 1, 4)
 
+        ### Conformers
+        ConfTab = QGridLayout(self.tabs)
+        ConfTab.addWidget(QLabel('Unit:'), 0, 0)
+        self.conf_unit = QComboBox()
+        self.conf_unit.addItems(['Ha', 'eV', 'kcal/mol'])
+        self.conf_unit.currentTextChanged.connect(self.update_conf_table)
+        ConfTab.addWidget(self.conf_unit, 0, 1)
+
+        ConfTab.addWidget(QLabel('Sort by:'), 0, 2)
+        self.conf_sort = QComboBox()
+        self.conf_sort.addItems(['E', 'G'])
+        self.conf_sort.setCurrentIndex(1)
+        self.conf_sort.currentTextChanged.connect(self.update_conf_table)
+        ConfTab.addWidget(self.conf_sort, 0, 3)
+
+        ConfTab.addWidget(QLabel('Shift energies:'), 0, 4)
+        self.conf_shift = QCheckBox()
+        self.conf_shift.clicked.connect(self.update_conf_table)
+        ConfTab.addWidget(self.conf_shift, 0, 5)
+
+        ConfTab.setColumnStretch(1,1)
+        ConfTab.setColumnStretch(3,1)
+
         self._pickle_columns = [('info', 'file_basename'), ('temp', 'N_Hbonds'),
                                 ('log', 'electronic_energy'), ('log', 'gibbs_free_energy')]
+        
         self.conf_table = QTableWidget(self.tabs, columnCount=4)
         self.conf_table.setHorizontalHeaderLabels(['basename', 'H-bonds', 'Elec. energy', 'Gibbs energy'])
         self.conf_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.conf_table.cellClicked.connect(self.select_conformer)
+        self.conf_table.currentCellChanged.connect(self.select_conformer)
         self.conf_table.setColumnWidth(1, 60)       
+        ConfTab.addWidget(self.conf_table, 1, 0, 2, 6)
 
-        self.tabs.addTab(self.conf_table, 'Conformers')
+        ConfTabWidget=QWidget(self.tabs)
+        ConfTabWidget.setLayout(ConfTab)
+        self.tabs.addTab(ConfTabWidget, 'Conformers')
 
+
+        ### Hydrogen bonds
+        HbondTab = QGridLayout(self.tabs)
+        HbondTab.addWidget(QLabel('Detected Hydrogen Bonds:'), 0, 0)
         self.Hbond_table = QTableWidget(self.tabs, columnCount=4)
         self.Hbond_table.setHorizontalHeaderLabels(['D', 'A', 'length (Å)', 'angle (deg)'])
         self.Hbond_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.tabs.addTab(self.Hbond_table, 'H-bonds')
+        self.Hbond_table.setFixedHeight(390)
+        self.Hbond_table.currentCellChanged.connect(self.highlight_Hbond)
+        HbondTab.addWidget(self.Hbond_table, 1, 0)
 
+        HbondTab.addWidget(QLabel('H-bond Limits:'), 3, 0)
+        self.limit_table = QTableWidget(self.tabs, rowCount=3, columnCount=2)
+        self.limit_table.setWindowTitle('H-bonding limits')
+        self.limit_table.setHorizontalHeaderLabels(['length (Å)', 'angle (deg)'])
+        self.limit_table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
+        self.limit_table.cellChanged.connect(self.update_limits)
+        HbondTab.addWidget(self.limit_table, 4, 0)
+
+        HbondTabWidget=QWidget(self.tabs)
+        HbondTabWidget.setLayout(HbondTab)
+        self.tabs.addTab(HbondTabWidget, 'H-bonds')
+        
+        ### Results
         self.Hbond_results = {}
         self.results_tree = QTreeWidget(self.tabs, columnCount=4)
         self.results_tree.setHeaderLabels(['Conformer', 'Hbond', 'Energy (kcal/mol)', ''])
@@ -152,31 +194,27 @@ class DataWidget(QGroupBox):
         self.results_tree.setColumnWidth(3,10)
         self.tabs.addTab(self.results_tree, 'Results')
 
-        self.limit_table = QTableWidget(self.tabs, rowCount=3, columnCount=2)
-        self.limit_table.setWindowTitle('H-bonding limits')
-        self.limit_table.setHorizontalHeaderLabels(['length (Å)', 'angle (deg)'])
-        self.limit_table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
-        self.limit_table.cellChanged.connect(self.update_limits)
-        self.tabs.addTab(self.limit_table, 'Limits')
-
+        ### Patterns
         self.patterns_table = PatternsWidget(self, self.editor)
         self.patterns_table.setWindowTitle('Patterns')
         #self.load_patterns()
         self.tabs.addTab(self.patterns_table, 'Patterns')
 
         self.setWindowTitle("Data")
-        self.setMinimumWidth(440)
-
+        self.setMinimumWidth(450)
+    
     def set_calculator(self, calc):
         self.calculator = calc
-        
         self.parent().parent().calcAction.setText("Calculate")
 
+        self.patterns_table.match_all_patterns() # enables pattern calculators
+
     def calculate_frag_energies(self):
-        if self.calculator == None or self.mode == '':
+        if self.calculator is None or self.mode == '':
             return
         
         self.parent().parent().calcAction.setEnabled(False)
+        self.patterns_table.setEnabled(False)
         self.editor.logger.info(f'Calculating in {self.mode.replace('*', 'Reduced ')} mode')
             
         mol = self._rdmol_simple if '*' in self.mode else self._rdmol
@@ -188,8 +226,9 @@ class DataWidget(QGroupBox):
         worker.signals.result.connect(self.add_results)
         self.threadpool.start(worker)
 
+    # calcutates MTA energies for all patterns and cuts
     def calculate_with_patterns(self, cuts, patterns, corrections):
-        if self.calculator == None or self.mode == '':
+        if self.calculator is None or self.mode == '':
             return
         
         self.editor.clearAtomSelection()
@@ -199,22 +238,22 @@ class DataWidget(QGroupBox):
         def func(cuts, patterns, corrections):
             results = {}
             for i, (cut1, cut2) in enumerate(cuts):
-                frags = self.get_fragments(cut1, cut2)
-                if (frags is None) or (None in frags):
-                    print(patterns[i], frags)
-                    continue
                 self.editor.clearAtomSelection()
                 self.editor._selectedAtoms[1] = cut1
                 self.editor._selectedAtoms[2] = cut2
                 self.editor.molChanged.emit()
 
+                frags = self.get_fragments(*self.editor.GetSelectedCuts())
+                if (frags is None) or (None in frags):
+                    print(patterns[i], frags, cut1, cut2)
+                    continue
+                
+
                 mol = self._rdmol_simple if '*' in self.mode else self._rdmol
                 if 'MTA' in self.mode:
                     frags = [mol]+list(self.frags)
                     result = get_single_point_energies(frags, self.calculator)
-                #elif 'ROT' in self.mode:
-                #    result = get_rotational_energies(mol, self.rotation, self.calculator)
-                results[self.bond_name+'-'+str(i)] = result, patterns[i], corrections[i]
+                    results[self.bond_name+'-'+str(i)] = result, patterns[i], corrections[i]
                 
             return results
         
@@ -232,7 +271,8 @@ class DataWidget(QGroupBox):
     
     def add_results(self, results, smiles=None, Eshift=0.0):        
         self.parent().parent().calcAction.setEnabled(True)
-        conf_name = self.clusters_df[('info', 'file_basename')].values[self.conf_id]
+        self.patterns_table.setEnabled(True)
+        conf_name = self.clusters_df.loc[self.conf_id, ('info', 'file_basename')]
         e0 = results[0][0]
         if 'MTA' in self.mode:
             bondE = (results[0][0] - results[1][0] - results[2][0] + results[3][0]) * E # kcal/mol
@@ -260,7 +300,10 @@ class DataWidget(QGroupBox):
 
         pairs = []; lengths = []; angles = []
         for b in self.bond_name.split(' + '):
-            don, acc, length, angle = self.Hbond_df.loc[b.removeprefix('r').removesuffix('*')]
+            if b=='':
+                continue
+            b = b.removeprefix('r').removesuffix('*')
+            don, acc, length, angle = self.Hbond_df.loc[b]
             pairs.append((int(don), int(acc)))
             lengths.append(length)
             angles.append(angle)
@@ -289,7 +332,7 @@ class DataWidget(QGroupBox):
         self.mol_select.clear()
         self.mol_select.addItems(self.cluster_types)
         self.select_cluster_type(self.cluster_types[0])        
-
+        
         return
 
     def select_cluster_type(self, ct, conf=0):
@@ -304,35 +347,34 @@ class DataWidget(QGroupBox):
         cf.extract_clusters(ct)
         cf.Hbonded(100, 'X')
         self.clusters_df = cf.get_filtered_data(True)
-        if ('log', 'gibbs_free_energy') in self.clusters_df.columns:
-            self.clusters_df = self.clusters_df.sort_values(by=[('log', 'gibbs_free_energy'), ('log', 'electronic_energy')])
-        else:
-            self.clusters_df = self.clusters_df.sort_values(by=('log', 'electronic_energy'))
-
-        self.editor.logger.info(f"Selected {ct} with {str(len(self.clusters_df))} conformer(s)")
-
         self.conf_select.setRange(0, len(self.clusters_df)-1)
-        self.update_conf_table(self.clusters_df)
+        self.update_conf_table()
+        self.editor.logger.info(f"Selected {ct} with {str(len(self.clusters_df))} conformer(s)")
 
         self.editor.clearAtomSelection()
         self._rdmol = generate_mol(cf, ct)
         self.select_conformer(conf)
 
     def select_conformer(self, conf_id=0):
-        self.conf_id = conf_id
+        self.conf_select.blockSignals(True)
         self.conf_select.setValue(conf_id)
+        self.conf_select.blockSignals(False)
+
+        conf_id = self.conf_idx[conf_id]
+        self.conf_id = conf_id
         self.conf_table.selectRow(conf_id)
 
         self.mode = ''
         self._rdmol_simple = None
-        don, acc = self.clusters_df[('temp', 'Hbond_pairs')].values[conf_id]
-        atoms = self.clusters_df[('xyz', 'structure')].values[conf_id]
+        don, acc = self.clusters_df.loc[conf_id, ('temp', 'Hbond_pairs')]
+        atoms = self.clusters_df.loc[conf_id, ('xyz', 'structure')]
         self._rdmol.GetConformer(0).SetPositions(atoms.positions)
 
         self.editor.mol = add_hydrogen_bonds(self._rdmol, don, acc)
 
-        lengths = self.clusters_df[('temp', 'Hbond_lengths')].values[conf_id]
-        angles = self.clusters_df[('temp', 'Hbond_angles')].values[conf_id]
+        lengths = self.clusters_df.loc[conf_id, ('temp', 'Hbond_lengths')]
+        angles = self.clusters_df.loc[conf_id, ('temp', 'Hbond_angles')]
+
         n = len(don)
         self.Hbond_table.setRowCount(n)
         self.Hbond_table.setVerticalHeaderLabels(['HB'+str(i+1) for i in range(n)])
@@ -356,6 +398,40 @@ class DataWidget(QGroupBox):
 
         self.patterns_table.match_all_patterns()
     
+    def update_conf_table(self):
+        if self.clusters_df is None:
+            return
+        df = self.clusters_df[self._pickle_columns]
+
+        Ecolumns = {'E': ('log', 'electronic_energy'), 'G': ('log', 'gibbs_free_energy')}
+        
+        if Ecolumns['G'] in df.columns and self.conf_sort.currentText() == 'G':
+            df = df.sort_values(by=[Ecolumns['G'], Ecolumns['G']])
+        else:
+            df = df.sort_values(by=(Ecolumns['E']))
+            self.conf_sort.setCurrentIndex(0)
+        self.conf_idx = df.index.values
+        
+        unit = {'Ha': 1, 'eV': units.Ha / units.eV, 'kcal/mol': E}
+        for k, col in Ecolumns.items():
+            if col not in df.columns: 
+                continue
+            df[col] *= unit[self.conf_unit.currentText()]
+            if self.conf_shift.isChecked():
+                df[col] -= df[col].min()
+        
+        self.conf_table.setRowCount(len(df))
+        self.conf_table.setVerticalHeaderLabels([str(i) for i in range(len(df))])
+        
+        for i, col in enumerate(self._pickle_columns):
+            for row, idx in enumerate(self.conf_idx):
+                if col in df.columns:
+                    self.conf_table.setItem(row, i, QTableWidgetItem(str(df.loc[idx, col])))
+                else:
+                    self.conf_table.setItem(row, i, QTableWidgetItem('NaN'))
+                self.conf_table.itemAt(row, i).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        return
+
     def get_fragments(self, cut1=[], cut2=[]):
         frag1 = frag2 = frag12 = None
         proceed = True
@@ -430,16 +506,28 @@ class DataWidget(QGroupBox):
 
         return
     
+    def highlight_Hbond(self, row):
+        label = self.Hbond_table.verticalHeaderItem(row).text()
+        label = label.replace('*', '')
+
+        mol = self.editor.mol
+        for b in mol.GetBonds():
+            if b.HasProp('bondNote'):
+                if b.GetProp('bondNote') == label:
+                    i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+                    self.editor._selectedAtoms[0] = []
+                    self.editor.selectAtom(i)
+                    self.editor.selectAtom(j)
+                    return
+
     def simplify(self, cuts):
         if len(cuts) == 0:
             return None
         
         try:
             self._rdmol_simple = None
-            #try:
             self._rdmol_simple = cut_molecule(self._rdmol, cuts)
-            don, acc = self.clusters_df[('temp', 'Hbond_pairs')].values[self.conf_id]
-            #atoms = self.clusters_df[('xyz', 'structure')].values[self.conf_id]
+            don, acc = self.clusters_df.loc[self.conf_id, ('temp', 'Hbond_pairs')]
             new_mol = add_hydrogen_bonds(self._rdmol_simple, don, acc, self.editor.mol)
             self.mode = '*'
             return new_mol
@@ -447,18 +535,6 @@ class DataWidget(QGroupBox):
             self.mode = ''
             return
     
-    def update_conf_table(self, df):
-        self.conf_table.setRowCount(len(df))
-        self.conf_table.setVerticalHeaderLabels([str(i) for i in range(len(df))])
-        
-        for i, col in enumerate(self._pickle_columns):
-            for row, idx in enumerate(df.index.values):
-                if col in df.columns:
-                    self.conf_table.setItem(row, i, QTableWidgetItem(str(df.loc[idx, col])))
-                else:
-                    self.conf_table.setItem(row, i, QTableWidgetItem('NaN'))
-                self.conf_table.itemAt(row, i).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        return
 
     def update_limits(self, row, col):
         if self.cluster_filter == None:
@@ -494,12 +570,11 @@ class DataWidget(QGroupBox):
 
         except:
             self.editor.logger.error(f'Invalid limits: {text}')
-            self.set_limits_table(self.cluster_filter.Hbond_limits)
         
         return
     
     def set_limits_table(self, df):
-        self.limit_table.cellChanged.disconnect()
+        self.limit_table.blockSignals(True)
         self.limit_table.setRowCount(len(df))
         
         for i, idx in enumerate(df.index.values):
@@ -509,7 +584,7 @@ class DataWidget(QGroupBox):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.limit_table.setItem(i, j, item)
         
-        self.limit_table.cellChanged.connect(self.update_limits)
+        self.limit_table.blockSignals(False)
         return
     
     def update_results_tree(self, bond_name, energy, idx):
@@ -521,7 +596,7 @@ class DataWidget(QGroupBox):
         else: 
             item = items[0]
 
-        conf = self.clusters_df[('info', 'file_basename')].values[self.conf_id]
+        conf = self.clusters_df.loc[self.conf_id, ('info', 'file_basename')]
 
         parents = self.results_tree.findItems(conf, Qt.MatchFlag.MatchRecursive)
         if len(parents) == 0:
@@ -531,11 +606,13 @@ class DataWidget(QGroupBox):
             parent = parents[0]
             
         child = QTreeWidgetItem(parent)
+        
         child.setText(1, bond_name)
         child.setText(2, str(round(energy,5)))
         parent.addChild(child)
         
         delete_button = QPushButton('')
+        delete_button.setFixedWidth(25)
         def delete_row():
             child.parent().removeChild(child)
             self.results = self.results.drop(index=idx)
@@ -548,7 +625,7 @@ class DataWidget(QGroupBox):
         item.setExpanded(True)
         for i in range(4):
             self.results_tree.resizeColumnToContents(i)
-
+        
         return
     
     def rotate_mol(self, radii, axis):
@@ -573,7 +650,6 @@ class DataWidget(QGroupBox):
             
         self.editor.logger.info('Results saved to '+file)
         return
-
 
 
 if __name__ == '__main__':
