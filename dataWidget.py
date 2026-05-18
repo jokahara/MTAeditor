@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (QLayout, QApplication, QCheckBox, QComboBox,
 
 from molEditWidget import MolEditWidget
 from patternsWidget import DropLineEdit, PatternsWidget
+from DetachableTabWidget import DetachableTabWidget
+
 from tools import *
 from calculators import *
 
@@ -122,7 +124,8 @@ class DataWidget(QGroupBox):
         main_layout.addWidget(self.conf_select, 1, 3) 
         main_layout.setColumnStretch(1,1)
 
-        self.tabs = QTabWidget(self)
+        self.tabs = DetachableTabWidget(self)
+        self.tabs.setMovable(True)
         main_layout.addWidget(self.tabs, 5, 0, 1, 4)
 
         ### Conformers
@@ -314,7 +317,7 @@ class DataWidget(QGroupBox):
         self.i += 1
 
         self.update_results_tree(self.bond_name, bondE, self.i - 1)
-        self.tabs.setCurrentIndex(2)
+        self.tabs.setCurrentWidget(self.results_tree)
 
     def load_pickled_data(self, pickle_file, mol_file=None):
         if not os.path.isfile(pickle_file):
